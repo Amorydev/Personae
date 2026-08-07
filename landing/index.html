@@ -563,8 +563,8 @@
     <h2 class="serif" style="margin-top:14px">Stop signing out.<br>Start with Personae.</h2>
     <p class="sub">Download it, create your first profile, and never lose your place in a conversation again.</p>
     <div class="cta-row">
-      <a class="btn btn-primary" href="#" data-download="macos">Download <span class="os">for macOS</span></a>
-      <a class="btn btn-ghost" href="#" data-download="windows">Download for Windows</a>
+      <a class="btn btn-primary" href="https://github.com/Amorydev/MultipleClaudeProfile/releases/download/v0.1.1/Personae_0.1.0_universal.dmg">Download <span class="os">for macOS</span></a>
+      <a class="btn btn-ghost" href="https://github.com/Amorydev/MultipleClaudeProfile/releases/download/v0.1.1/Personae_0.1.0_x64-setup.exe">Download for Windows</a>
     </div>
     <div class="ver">v0.1.0 · Universal (Apple silicon &amp; Intel) · macOS 11+ &amp; Windows 10+</div>
     <div class="contact">Questions or feedback? <a href="mailto:amory.dev@gmail.com">amory.dev@gmail.com</a></div>
@@ -604,15 +604,5 @@
     els.forEach(function (e) { io.observe(e); });
   })();
 
-  // Download buttons are placeholders until release URLs are wired.
-  document.querySelectorAll('[data-download]').forEach(function (a) {
-    a.addEventListener('click', function (ev) {
-      ev.preventDefault();
-      var was = a.querySelector('.os') ? a.querySelector('.os').textContent : '';
-      var label = a.childNodes[0];
-      var orig = label.textContent;
-      label.textContent = 'Coming soon ';
-      setTimeout(function () { label.textContent = orig; }, 1400);
-    });
-  });
+  // Download buttons link directly to the GitHub release assets.
 </script>
