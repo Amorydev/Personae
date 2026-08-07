@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#CE8161"/><stop offset="1" stop-color="#AE5E38"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="26%" cy="-8%" r="80%">
+      <stop offset="0" stop-color="#C2714F" stop-opacity="0.32"/>
+      <stop offset="0.5" stop-color="#8B5CF6" stop-opacity="0.07"/>
+      <stop offset="0.82" stop-color="#C2714F" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <rect width="1200" height="630" fill="#0b0b0e"/>
+  <rect width="1200" height="630" fill="url(#glow)"/>
+
+  <!-- brand row -->
+  <g transform="translate(96,80)">
+    <rect width="86" height="86" rx="22" fill="url(#tile)"/>
+    <g fill="#ffffff" transform="translate(43,43) scale(0.60) translate(-50,-50)">
+      <rect x="46" y="7" width="8" height="34" rx="4"/>
+      <rect x="46" y="7" width="8" height="34" rx="4" transform="rotate(30 50 50)"/>
+      <rect x="46" y="7" width="8" height="34" rx="4" transform="rotate(60 50 50)"/>
+      <rect x="46" y="7" width="8" height="34" rx="4" transform="rotate(90 50 50)"/>
+      <rect x="46" y="7" width="8" height="34" rx="4" transform="rotate(120 50 50)"/>
+      <rect x="46" y="7" width="8" height="34" rx="4" transform="rotate(150 50 50)"/>
+      <rect x="46" y="7" width="8" height="34" rx="4" transform="rotate(180 50 50)"/>
+      <rect x="46" y="7" width="8" height="34" rx="4" transform="rotate(210 50 50)"/>
+      <rect x="46" y="7" width="8" height="34" rx="4" transform="rotate(240 50 50)"/>
+      <rect x="46" y="7" width="8" height="34" rx="4" transform="rotate(270 50 50)"/>
+      <rect x="46" y="7" width="8" height="34" rx="4" transform="rotate(300 50 50)"/>
+      <rect x="46" y="7" width="8" height="34" rx="4" transform="rotate(330 50 50)"/>
+    </g>
+    <text x="114" y="58" font-family="Georgia, 'Times New Roman', serif" font-size="50" font-weight="700" fill="#ece7e1">Personae</text>
+  </g>
+
+  <!-- tagline -->
+  <text x="96" y="322" font-family="Georgia, serif" font-size="76" font-weight="700" fill="#f1ece6">Run multiple Claude</text>
+  <text x="96" y="408" font-family="Georgia, serif" font-size="76" font-weight="700" fill="#f1ece6">accounts, <tspan font-style="italic" fill="#CE8161">at once.</tspan></text>
+
+  <!-- spectrum band -->
+  <g transform="translate(98,468)">
+    <rect x="0"   y="0" width="58" height="58" rx="16" fill="#C2714F"/>
+    <rect x="74"  y="0" width="58" height="58" rx="16" fill="#14B8A6"/>
+    <rect x="148" y="0" width="58" height="58" rx="16" fill="#8B5CF6"/>
+    <rect x="222" y="0" width="58" height="58" rx="16" fill="#EC4899"/>
+    <rect x="296" y="0" width="58" height="58" rx="16" fill="#F0A33A"/>
+    <rect x="370" y="0" width="58" height="58" rx="16" fill="#4B8EF0"/>
+  </g>
+
+  <!-- footer -->
+  <text x="98" y="576" font-family="Helvetica, Arial, sans-serif" font-size="23" fill="#9d968f">macOS &amp; Windows    &#183;    Free    &#183;    Local-first    &#183;    ~3 MB</text>
+</svg>

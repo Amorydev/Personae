@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="stylesheet" href="styles.css" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Personae</title>
+    <script type="module" src="/main.js" defer></script>
+  </head>
+  <body>
+    <div class="app">
+      <!-- ================= sidebar ================= -->
+      <aside class="sidebar">
+        <div class="side-head" data-tauri-drag-region></div>
+        <div class="search">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+            <circle cx="11" cy="11" r="7" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
+          </svg>
+          <input id="search" placeholder="Search profiles…" autocomplete="off" spellcheck="false" />
+        </div>
+        <div class="section">Profiles</div>
+        <ul id="list" class="profiles"></ul>
+        <div class="side-foot">
+          <button id="new-side" class="newbtn"><span class="plus">+</span> New profile</button>
+        </div>
+      </aside>
+
+      <!-- ================= detail ================= -->
+      <main class="detail">
+        <div class="detail-head" data-tauri-drag-region>
+          <div class="spacer" data-tauri-drag-region></div>
+          <button id="new-top" class="newtop"><span class="plus">+</span> New profile <kbd>⌘</kbd><kbd>N</kbd></button>
+        </div>
+
+        <div id="warn" class="warn hidden"></div>
+
+        <div id="detail-body" class="detail-body"><!-- filled by JS --></div>
+
+        <div id="actionbar" class="actionbar hidden">
+          <button id="primary" class="primary"></button>
+          <button id="edit" class="btn">Edit</button>
+          <div class="spacer"></div>
+          <div class="hints">
+            <span><kbd>⌘</kbd><kbd>L</kbd> launch</span>
+            <span><kbd>⌫</kbd> delete</span>
+          </div>
+        </div>
+
+        <div class="detail-foot">
+          <span id="foot-status" class="ok">● Activated</span>
+          <div class="spacer"></div>
+          <span class="link" id="repair-link" title="Rewrite launchers to force native arch">Repair</span>
+          <span class="ver">v0.1.0</span>
+          <span class="link" id="feedback">💬 Send feedback</span>
+        </div>
+      </main>
+    </div>
+
+    <!-- ================= create modal ================= -->
+    <div id="create-modal" class="modal hidden">
+      <div class="modal-card">
+        <div class="modal-title">New profile</div>
+        <label class="k" for="new-name">Name</label>
+        <input id="new-name" class="text" placeholder="e.g. Work, Personal, Client" autocomplete="off" spellcheck="false" />
+        <label class="k">Accent</label>
+        <div id="swatches" class="swatches"></div>
+        <div class="modal-actions">
+          <button id="create-cancel" class="btn">Cancel</button>
+          <button id="create-go" class="primary">Create profile</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ================= edit (accent) modal ================= -->
+    <div id="edit-modal" class="modal hidden">
+      <div class="modal-card">
+        <div class="modal-title">Change accent</div>
+        <label class="k">Pick a colour — applies immediately</label>
+        <div id="edit-swatches" class="swatches"></div>
+        <div class="modal-actions">
+          <button id="edit-cancel" class="btn">Done</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ================= delete modal ================= -->
+    <div id="del-modal" class="modal hidden">
+      <div class="modal-card">
+        <div id="del-title" class="modal-title"></div>
+        <label class="chk"><input type="checkbox" id="purge" /> Also erase login &amp; history data (cannot be undone)</label>
+        <div class="modal-actions">
+          <button id="del-cancel" class="btn">Cancel</button>
+          <button id="del-go" class="danger">Delete profile</button>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>

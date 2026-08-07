@@ -1,0 +1,425 @@
+// Windows implementation — WRITTEN FROM CLAUDE'S CODE + WINDOWS DOCS, NOT YET
+// TESTED ON A REAL WINDOWS MACHINE. Every point marked TODO(verify) must be
+// confirmed on Windows; see docs/WINDOWS-TEST-PLAN.md for the checklist.
+//
+// What is solid (from docs): data isolation via CLAUDE_USER_DATA_DIR +
+// --user-data-dir; Squirrel path %LOCALAPPDATA%\AnthropicClaude\app-<ver>\Claude.exe;
+// newer MSIX alias %LOCALAPPDATA%\Microsoft\WindowsApps\Claude.exe.
+//
+// What is genuinely uncertain: whether per-profile taskbar SEPARATION is possible
+// at all. Claude (Electron) sets its own process AUMID at launch, which Windows
+// lets override the shortcut's AUMID for grouping. We set the .lnk AUMID anyway
+// (harmless, future-proof) but do NOT promise separate taskbar groups.
+#![cfg(windows)]
+use crate::platform::*;
+use std::fs;
+use std::path::PathBuf;
+
+// Bundled PowerShell helpers (kept as inspectable files under scripts/win/,
+// embedded into the binary, and written out next to the profiles at runtime).
+const PS_SET_AUMID: &str = include_str!("../scripts/win/set-aumid.ps1");
+const PS_TINT_ICO: &str = include_str!("../scripts/win/tint-ico.ps1");
+
+pub struct Win;
+
+impl Win {
+    pub fn new() -> Self {
+        Win
+    }
+
+    fn appdata(&self) -> PathBuf {
+        PathBuf::from(std::env::var("APPDATA").unwrap_or_default())
+    }
+    fn localappdata(&self) -> PathBuf {
+        PathBuf::from(std::env::var("LOCALAPPDATA").unwrap_or_default())
+    }
+
+    /// Per-profile launchers (`<slug>.cmd`), icons (`<slug>.ico`), display-name
+    /// sidecars (`<slug>.name`), and the emitted PS helpers (`_helpers\`).
+    fn app_root(&self) -> PathBuf {
+        self.localappdata().join("ClaudeProfiles").join("apps")
+    }
+    /// Isolated Claude data lives under Roaming, one dir per slug.
+    fn data_root(&self) -> PathBuf {
+        self.appdata().join("ClaudeProfiles")
+    }
+    fn start_menu(&self) -> PathBuf {
+        self.appdata()
+            .join(r"Microsoft\Windows\Start Menu\Programs\Claude Profiles")
+    }
+
+    fn launcher_cmd(&self, slug: &str) -> PathBuf {
+        self.app_root().join(format!("{slug}.cmd"))
+    }
+    fn ico_file(&self, slug: &str) -> PathBuf {
+        self.app_root().join(format!("{slug}.ico"))
+    }
+    fn name_file(&self, slug: &str) -> PathBuf {
+        self.app_root().join(format!("{slug}.name"))
+    }
+    fn tint_file(&self, slug: &str) -> PathBuf {
+        self.data_root().join(slug).join(".claude-profile-tint")
+    }
+    fn lnk_path(&self, name: &str) -> PathBuf {
+        self.start_menu().join(format!("{name}.lnk"))
+    }
+
+    /// Locate Claude.exe. Order favours update-stable paths first:
+    ///   1. CLAUDE_APP override
+    ///   2. Squirrel versionless stub  %LOCALAPPDATA%\AnthropicClaude\Claude.exe
+    ///   3. MSIX PATH alias            %LOCALAPPDATA%\Microsoft\WindowsApps\Claude.exe
+    ///   4. newest Squirrel            %LOCALAPPDATA%\AnthropicClaude\app-<ver>\Claude.exe
+    /// The versioned path (4) pins a version that disappears on update — `repair`
+    /// re-resolves and rewrites launchers to fix that (same story as macOS repair).
+    fn claude_exe(&self) -> Option<PathBuf> {
+        if let Ok(p) = std::env::var("CLAUDE_APP") {
+            let pb = PathBuf::from(p);
+            if pb.is_file() {
+                return Some(pb);
+            }
+        }
+        let anthropic = self.localappdata().join("AnthropicClaude");
+        let stub = anthropic.join("Claude.exe");
+        if stub.is_file() {
+            return Some(stub);
+        }
+        let msix = self.localappdata().join(r"Microsoft\WindowsApps\Claude.exe");
+        if msix.is_file() {
+            return Some(msix);
+        }
+        if let Ok(rd) = fs::read_dir(&anthropic) {
+            // Pick the highest app-<ver> by numeric version (so 0.10 > 0.9).
+            let mut best: Option<(Vec<u32>, PathBuf)> = None;
+            for e in rd.flatten() {
+                let p = e.path();
+                let fname = p.file_name().and_then(|s| s.to_str()).unwrap_or("");
+                if let Some(ver) = fname.strip_prefix("app-") {
+                    let exe = p.join("Claude.exe");
+                    if exe.is_file() {
+                        let parsed: Vec<u32> =
+                            ver.split('.').filter_map(|x| x.parse().ok()).collect();
+                        let take = match &best {
+                            Some((bv, _)) => parsed > *bv,
+                            None => true,
+                        };
+                        if take {
+                            best = Some((parsed, exe));
+                        }
+                    }
+                }
+            }
+            if let Some((_, exe)) = best {
+                return Some(exe);
+            }
+        }
+        None
+    }
+
+    /// Write the two PS helpers next to the profiles; return their paths.
+    fn ensure_helpers(&self) -> Result<(PathBuf, PathBuf), String> {
+        let dir = self.app_root().join("_helpers");
+        fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+        let a = dir.join("set-aumid.ps1");
+        let t = dir.join("tint-ico.ps1");
+        fs::write(&a, PS_SET_AUMID).map_err(|e| e.to_string())?;
+        fs::write(&t, PS_TINT_ICO).map_err(|e| e.to_string())?;
+        Ok((a, t))
+    }
+
+    /// Invoke a bundled .ps1 with `-Key Value` params (Bypass so unsigned runs).
+    fn run_ps(&self, script: &PathBuf, params: &[(&str, &str)]) -> bool {
+        let mut args: Vec<String> = vec![
+            "-NoProfile".into(),
+            "-ExecutionPolicy".into(),
+            "Bypass".into(),
+            "-File".into(),
+            script.display().to_string(),
+        ];
+        for (k, v) in params {
+            args.push(format!("-{k}"));
+            args.push((*v).to_string());
+        }
+        let refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+        run("powershell", &refs).0
+    }
+
+    fn write_launcher(&self, slug: &str, data_dir: &PathBuf, exe: &PathBuf) -> Result<(), String> {
+        // A .cmd that isolates data then launches Claude. We set BOTH:
+        //   * CLAUDE_USER_DATA_DIR (Claude's own relocation env var), AND
+        //   * --user-data-dir=<dir> on the command line.
+        // The flag is what makes running-detection possible: Win32_Process exposes
+        // CommandLine but NOT the environment, so an env-only launch was invisible
+        // to profile_pids(). Both point at the same dir (no conflict).
+        let dd = data_dir.display().to_string();
+        let body = format!(
+            "@echo off\r\nset \"CLAUDE_USER_DATA_DIR={dd}\"\r\nstart \"\" \"{exe}\" \"--user-data-dir={dd}\" %*\r\n",
+            dd = dd,
+            exe = exe.display()
+        );
+        fs::write(self.launcher_cmd(slug), body).map_err(|e| e.to_string())
+    }
+
+    /// Create the Start-Menu .lnk (target = launcher .cmd, custom icon) via
+    /// WScript.Shell. AUMID is applied afterwards by set-aumid.ps1 (WScript.Shell
+    /// cannot set it). `icon_location` is a "path,index" string.
+    fn create_shortcut(&self, name: &str, slug: &str, icon_location: &str) -> Result<(), String> {
+        fs::create_dir_all(self.start_menu()).map_err(|e| e.to_string())?;
+        let lnk = self.lnk_path(name);
+        let cmd = self.launcher_cmd(slug);
+        let ps = format!(
+            "$w=New-Object -ComObject WScript.Shell; $s=$w.CreateShortcut('{lnk}'); \
+             $s.TargetPath='{cmd}'; $s.WorkingDirectory='{wd}'; \
+             $s.IconLocation='{icon}'; $s.WindowStyle=7; $s.Save()",
+            lnk = ps_quote(&lnk.display().to_string()),
+            cmd = ps_quote(&cmd.display().to_string()),
+            wd = ps_quote(&self.app_root().display().to_string()),
+            icon = ps_quote(icon_location),
+        );
+        let (ok, e) = run(
+            "powershell",
+            &["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", &ps],
+        );
+        if ok {
+            Ok(())
+        } else {
+            Err(e)
+        }
+    }
+
+    fn count_apps(&self) -> usize {
+        fs::read_dir(self.app_root())
+            .map(|rd| {
+                rd.flatten()
+                    .filter(|e| e.path().extension().map_or(false, |x| x == "cmd"))
+                    .count()
+            })
+            .unwrap_or(0)
+    }
+
+    /// pids of Claude processes whose CommandLine references this data dir.
+    /// Works because write_launcher passes --user-data-dir=<dir> (see there).
+    fn profile_pids(&self, data_dir: &PathBuf) -> Vec<String> {
+        // Backslashes are LITERAL to PowerShell -like (only * ? [ ] are wildcards),
+        // so do NOT double them; escape single-quotes for the PS single-quoted string.
+        let dd = data_dir.display().to_string().replace('\'', "''");
+        let ps = format!(
+            "Get-CimInstance Win32_Process | Where-Object {{ $_.Name -eq 'Claude.exe' -and $_.CommandLine -like '*{dd}*' }} | Select-Object -ExpandProperty ProcessId",
+            dd = dd
+        );
+        let (_, out) = run(
+            "powershell",
+            &["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", &ps],
+        );
+        out.split_whitespace().map(|s| s.to_string()).collect()
+    }
+}
+
+fn ps_quote(s: &str) -> String {
+    s.replace('\'', "''")
+}
+
+impl Platform for Win {
+    fn claude_found(&self) -> bool {
+        self.claude_exe().is_some()
+    }
+
+    fn create(&self, name: &str, color: Option<String>, _isolation: &str) -> Result<(), String> {
+        let exe = self
+            .claude_exe()
+            .ok_or("Claude Desktop not found (set CLAUDE_APP).")?;
+        let slug = slugify(name);
+        if slug.is_empty() {
+            return Err("Name must contain letters or numbers.".into());
+        }
+        let data_dir = self.data_root().join(&slug);
+        if self.launcher_cmd(&slug).exists() {
+            return Err(format!("Profile already exists: {name}"));
+        }
+
+        let pre_count = self.count_apps();
+        fs::create_dir_all(self.app_root()).map_err(|e| e.to_string())?;
+        fs::create_dir_all(&data_dir).map_err(|e| e.to_string())?;
+
+        self.write_launcher(&slug, &data_dir, &exe)?;
+        // The .cmd is named by slug; remember the original display name.
+        let _ = fs::write(self.name_file(&slug), name);
+
+        let hex = match color {
+            Some(c) => resolve_color(&c).ok_or(format!("Unrecognized color '{c}'."))?,
+            None => PALETTE[pre_count % PALETTE.len()].to_string(),
+        };
+        let _ = fs::write(self.tint_file(&slug), format!("#{hex}"));
+
+        let (aumid_ps, tint_ps) = self.ensure_helpers().unwrap_or_default();
+
+        // Best-effort tinted .ico; fall back to Claude's own icon on any failure.
+        let ico = self.ico_file(&slug);
+        let icon_location = if !tint_ps.as_os_str().is_empty()
+            && self.run_ps(
+                &tint_ps,
+                &[
+                    ("Exe", &exe.display().to_string()),
+                    ("Out", &ico.display().to_string()),
+                    ("Hex", &hex),
+                ],
+            )
+            && ico.is_file()
+        {
+            format!("{},0", ico.display())
+        } else {
+            format!("{},0", exe.display())
+        };
+
+        // Best-effort: a failed Start-Menu shortcut must not abort creation — the
+        // .cmd launcher is the functional core and the app's Launch falls back to it.
+        let _ = self.create_shortcut(name, &slug, &icon_location);
+
+        // Best-effort unique AUMID (see set-aumid.ps1 for the Electron caveat).
+        if !aumid_ps.as_os_str().is_empty() {
+            let aumid = format!("{BUNDLE_PREFIX}.{slug}");
+            let _ = self.run_ps(
+                &aumid_ps,
+                &[
+                    ("Lnk", &self.lnk_path(name).display().to_string()),
+                    ("Aumid", &aumid),
+                ],
+            );
+        }
+        Ok(())
+    }
+
+    fn list(&self) -> Vec<Profile> {
+        let mut out = vec![];
+        let rd = match fs::read_dir(self.app_root()) {
+            Ok(r) => r,
+            Err(_) => return out,
+        };
+        for e in rd.flatten() {
+            let p = e.path();
+            if p.extension().map_or(false, |x| x == "cmd") {
+                let slug = p.file_stem().unwrap_or_default().to_string_lossy().to_string();
+                let name = fs::read_to_string(self.name_file(&slug))
+                    .ok()
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty())
+                    .unwrap_or_else(|| slug.clone());
+                let data_dir = self.data_root().join(&slug);
+                let running = !self.profile_pids(&data_dir).is_empty();
+                let tint = fs::read_to_string(self.tint_file(&slug))
+                    .ok()
+                    .map(|s| s.trim().to_string());
+                let md = fs::metadata(&data_dir).ok();
+                let created = md.as_ref().and_then(|m| m.created().ok()).and_then(to_secs);
+                let last_active = md.as_ref().and_then(|m| m.modified().ok()).and_then(to_secs);
+                out.push(Profile {
+                    name,
+                    slug,
+                    app_path: p.display().to_string(),
+                    data_path: data_dir.display().to_string(),
+                    running,
+                    data_size: "—".into(),
+                    tint,
+                    created,
+                    last_active,
+                });
+            }
+        }
+        out.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+        out
+    }
+
+    fn launch(&self, name: &str) -> Result<(), String> {
+        let slug = slugify(name);
+        let cmd = self.launcher_cmd(&slug);
+        if !cmd.exists() {
+            return Err(format!("No such profile: {name}"));
+        }
+        // Prefer the .lnk (carries the AUMID + icon); fall back to the raw .cmd.
+        let lnk = self.lnk_path(name);
+        let target = if lnk.exists() { lnk } else { cmd };
+        let (ok, e) = run("cmd", &["/C", "start", "", &target.display().to_string()]);
+        if ok {
+            Ok(())
+        } else {
+            Err(e)
+        }
+    }
+
+    fn quit(&self, name: &str) -> Result<(), String> {
+        let data_dir = self.data_root().join(slugify(name));
+        let pids = self.profile_pids(&data_dir);
+        if pids.is_empty() {
+            return Ok(());
+        }
+        // Graceful close (tree), wait, then force any survivors.
+        for pid in &pids {
+            run("taskkill", &["/PID", pid, "/T"]);
+        }
+        std::thread::sleep(std::time::Duration::from_millis(1500));
+        for pid in self.profile_pids(&data_dir) {
+            run("taskkill", &["/PID", &pid, "/T", "/F"]);
+        }
+        Ok(())
+    }
+
+    fn delete(&self, name: &str, purge: bool) -> Result<(), String> {
+        let slug = slugify(name);
+        let _ = fs::remove_file(self.launcher_cmd(&slug));
+        let _ = fs::remove_file(self.name_file(&slug));
+        let _ = fs::remove_file(self.ico_file(&slug));
+        let _ = fs::remove_file(self.lnk_path(name));
+        if purge {
+            let dd = self.data_root().join(&slug);
+            if dd.exists() {
+                fs::remove_dir_all(&dd).map_err(|e| e.to_string())?;
+            }
+        }
+        Ok(())
+    }
+
+    fn repair(&self) -> Result<usize, String> {
+        // Re-resolve Claude.exe and rewrite launchers — fixes launchers that point
+        // at an app-<ver> path Claude has since updated away from.
+        let exe = self.claude_exe().ok_or("Claude Desktop not found.")?;
+        let rd = match fs::read_dir(self.app_root()) {
+            Ok(r) => r,
+            Err(_) => return Ok(0),
+        };
+        let mut n = 0;
+        for e in rd.flatten() {
+            let p = e.path();
+            if p.extension().map_or(false, |x| x == "cmd") {
+                let slug = p.file_stem().unwrap_or_default().to_string_lossy().to_string();
+                let data_dir = self.data_root().join(&slug);
+                self.write_launcher(&slug, &data_dir, &exe)?;
+                n += 1;
+            }
+        }
+        Ok(n)
+    }
+
+    fn set_color(&self, name: &str, color: &str) -> Result<(), String> {
+        let slug = slugify(name);
+        if !self.launcher_cmd(&slug).exists() {
+            return Err(format!("No such profile: {name}"));
+        }
+        let hex = resolve_color(color).ok_or(format!("Unrecognized color '{color}'."))?;
+        let _ = fs::write(self.tint_file(&slug), format!("#{hex}"));
+        // Best-effort: re-tint the .ico so the shortcut icon updates too.
+        if let Some(exe) = self.claude_exe() {
+            let (_, tint_ps) = self.ensure_helpers().unwrap_or_default();
+            if !tint_ps.as_os_str().is_empty() {
+                let ico = self.ico_file(&slug);
+                let _ = self.run_ps(
+                    &tint_ps,
+                    &[
+                        ("Exe", &exe.display().to_string()),
+                        ("Out", &ico.display().to_string()),
+                        ("Hex", &hex),
+                    ],
+                );
+            }
+        }
+        Ok(())
+    }
+}

@@ -1,0 +1,686 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  <title>Personae — Run multiple Claude accounts at once | macOS &amp; Windows</title>
+  <meta name="description" content="Personae runs multiple isolated Claude Desktop accounts at once on macOS and Windows — each profile with its own login, history, and colour. Free, local, ~3 MB. Switch between multiple Claude accounts without logging out.">
+  <meta name="keywords" content="multiple Claude accounts, multi Claude, Claude Desktop profiles, Claude profile switcher, run two Claude accounts, multi-account Claude, Claude multiple accounts macOS, Claude multiple accounts Windows">
+  <meta name="author" content="Amory">
+  <meta name="robots" content="index, follow">
+  <meta name="theme-color" content="#0b0b0e">
+  <!-- TODO: replace YOURDOMAIN.com with your real domain everywhere below -->
+  <link rel="canonical" href="https://YOURDOMAIN.com/">
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+
+  <!-- Open Graph (Facebook, LinkedIn, iMessage, Slack…) -->
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Personae">
+  <meta property="og:title" content="Personae — Run multiple Claude accounts at once">
+  <meta property="og:description" content="Every Claude Desktop account in its own window, history, and colour. Free, local, native. macOS &amp; Windows.">
+  <meta property="og:url" content="https://YOURDOMAIN.com/">
+  <meta property="og:image" content="https://YOURDOMAIN.com/og.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+
+  <!-- Twitter / X -->
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Personae — Run multiple Claude accounts at once">
+  <meta name="twitter:description" content="Every Claude Desktop account in its own window, history, and colour. Free, local, native.">
+  <meta name="twitter:image" content="https://YOURDOMAIN.com/og.png">
+
+  <!-- Structured data: software app -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "Personae",
+    "description": "Run multiple isolated Claude Desktop accounts at once — each profile with its own login, history, and colour. Free, local, native to macOS and Windows.",
+    "applicationCategory": "UtilitiesApplication",
+    "operatingSystem": "macOS, Windows",
+    "softwareVersion": "0.1.0",
+    "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+    "url": "https://YOURDOMAIN.com/",
+    "author": { "@type": "Person", "email": "amory.dev@gmail.com" }
+  }
+  </script>
+
+  <!-- Structured data: FAQ (can earn a rich FAQ result on Google) -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    "mainEntity": [
+      { "@type": "Question", "name": "Can I run two or more Claude accounts at the same time?", "acceptedAnswer": { "@type": "Answer", "text": "Yes. Personae has no instance limit — open as many Claude Desktop accounts as you like, all at once, each in its own window and Dock icon." } },
+      { "@type": "Question", "name": "How do I run multiple Claude accounts on a Mac?", "acceptedAnswer": { "@type": "Answer", "text": "Install Personae, click New profile for each account (Work, Personal, a client), then Launch. Every profile is fully isolated with its own login and history — sign in once and it stays signed in." } },
+      { "@type": "Question", "name": "Does it work on Windows?", "acceptedAnswer": { "@type": "Answer", "text": "Yes — macOS 11+ and Windows 10+. The same isolation works on both platforms." } },
+      { "@type": "Question", "name": "Is my data private? Does Personae see my logins?", "acceptedAnswer": { "@type": "Answer", "text": "No. There is no account, no server, and no telemetry. Personae only orchestrates the Claude Desktop you already installed; each profile's data stays on your machine, isolated from the others." } },
+      { "@type": "Question", "name": "Will it break when Claude updates?", "acceptedAnswer": { "@type": "Answer", "text": "No. Personae wraps your installed Claude rather than repackaging it, so it keeps working after Claude's auto-updates." } },
+      { "@type": "Question", "name": "Is Personae free? Is it official?", "acceptedAnswer": { "@type": "Answer", "text": "It is free. It is an independent companion tool — not affiliated with, or endorsed by, Anthropic." } }
+    ]
+  }
+  </script>
+</head>
+<body>
+<meta charset="utf-8">
+<style>
+  /* ============================================================
+     Personae — landing page
+     Dark, warm, editorial. System fonts (native to the macOS app it markets).
+     Committed single dark theme by design.
+     ============================================================ */
+  :root {
+    --ink:      #0b0b0e;   /* warm near-black ground */
+    --ink-2:    #141216;   /* card */
+    --ink-3:    #1b181e;   /* raised */
+    --line:     #2a2630;
+    --line-soft:#201d25;
+    --paper:    #ece7e1;   /* warm off-white text */
+    --dim:      #9d968f;   /* warm grey */
+    --faint:    #6b655f;
+
+    --terra:  #c2714f;
+    --teal:   #14b8a6;
+    --violet: #8b5cf6;
+    --rose:   #ec4899;
+    --amber:  #f0a33a;
+    --azure:  #4b8ef0;
+    --ok:     #5bbd8e;
+
+    --accent: var(--terra);
+
+    --serif: ui-serif, "New York", "Iowan Old Style", Georgia, "Times New Roman", serif;
+    --sans:  -apple-system, "SF Pro Text", system-ui, "Segoe UI", Roboto, sans-serif;
+    --mono:  ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+
+    --wrap: 1120px;
+    --r: 14px; --r-lg: 20px; --r-xl: 26px;
+  }
+
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+  body {
+    margin: 0; background: var(--ink); color: var(--paper);
+    font-family: var(--sans); font-size: 16px; line-height: 1.6;
+    -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility;
+    overflow-x: hidden;
+  }
+  a { color: inherit; text-decoration: none; }
+  ::selection { background: color-mix(in srgb, var(--terra) 45%, transparent); }
+  :focus-visible { outline: 2px solid var(--terra); outline-offset: 3px; border-radius: 6px; }
+
+  .wrap { width: 100%; max-width: var(--wrap); margin: 0 auto; padding: 0 28px; }
+  .eyebrow {
+    font-family: var(--mono); font-size: 12px; letter-spacing: .22em; text-transform: uppercase;
+    color: var(--dim);
+  }
+  .serif { font-family: var(--serif); }
+
+  /* ---------- background atmosphere ---------- */
+  .atmos { position: fixed; inset: 0; z-index: -1; pointer-events: none; overflow: hidden; }
+  .atmos::before {
+    content: ""; position: absolute; top: -280px; left: 50%; transform: translateX(-50%);
+    width: 1200px; height: 720px;
+    background:
+      radial-gradient(46% 60% at 40% 30%, rgba(194,113,79,.28), transparent 70%),
+      radial-gradient(40% 55% at 66% 20%, rgba(20,184,166,.14), transparent 70%),
+      radial-gradient(38% 50% at 54% 55%, rgba(139,92,246,.12), transparent 72%);
+    filter: blur(20px);
+  }
+  .grain {
+    position: absolute; inset: 0; opacity: .05; mix-blend-mode: screen;
+    background-image: radial-gradient(rgba(255,255,255,.6) .5px, transparent .5px);
+    background-size: 3px 3px;
+  }
+
+  /* ---------- nav ---------- */
+  .nav {
+    position: sticky; top: 0; z-index: 40;
+    backdrop-filter: saturate(140%) blur(14px);
+    background: color-mix(in srgb, var(--ink) 74%, transparent);
+    border-bottom: 1px solid var(--line-soft);
+  }
+  .nav .row { display: flex; align-items: center; gap: 20px; height: 64px; }
+  .brand { display: flex; align-items: center; gap: 11px; font-family: var(--serif); font-size: 20px; font-weight: 600; letter-spacing: .01em; }
+  .nav .links { margin-left: 22px; display: flex; gap: 26px; }
+  .nav .links a { color: var(--dim); font-size: 14.5px; }
+  .nav .links a:hover { color: var(--paper); }
+  .nav .spacer { flex: 1; }
+
+  .btn {
+    font-family: var(--sans); font-size: 14.5px; font-weight: 600; cursor: pointer;
+    border-radius: 11px; padding: 10px 16px; border: 1px solid transparent; white-space: nowrap;
+    display: inline-flex; align-items: center; gap: 9px; transition: transform .15s ease, filter .15s ease, background .15s ease;
+  }
+  .btn:active { transform: translateY(1px); }
+  .btn-primary { background: var(--terra); color: #fff; box-shadow: inset 0 1px 0 rgba(255,255,255,.18), 0 8px 22px rgba(194,113,79,.32); }
+  .btn-primary:hover { filter: brightness(1.07); }
+  .btn-ghost { background: var(--ink-2); color: var(--paper); border-color: var(--line); }
+  .btn-ghost:hover { background: var(--ink-3); }
+  .btn .os { opacity: .7; font-weight: 500; }
+
+  /* ---------- tiles / burst mark ---------- */
+  .tile { display: grid; place-items: center; border-radius: 26%; color: #fff; position: relative;
+          box-shadow: inset 0 1px 0 rgba(255,255,255,.22), 0 8px 20px rgba(0,0,0,.38); }
+  .tile svg { width: 58%; height: 58%; }
+  .tile.rundot::after { content: ""; position: absolute; right: -3px; bottom: -3px; width: 12px; height: 12px;
+                        border-radius: 50%; background: var(--ok); border: 2.5px solid var(--ink-2); }
+
+  /* ---------- hero ---------- */
+  .hero { position: relative; padding: 68px 0 40px; }
+  .hero .grid { display: grid; grid-template-columns: 1.02fr 1fr; gap: 54px; align-items: center; }
+  .pill { display: inline-flex; align-items: center; gap: 8px; font-family: var(--mono); font-size: 12px;
+          letter-spacing: .14em; text-transform: uppercase; color: var(--dim);
+          border: 1px solid var(--line); border-radius: 999px; padding: 6px 12px; }
+  .pill .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 8px var(--ok); }
+  h1.title {
+    font-family: var(--serif); font-weight: 600; margin: 22px 0 0;
+    font-size: clamp(42px, 6vw, 68px); line-height: 1.02; letter-spacing: -.02em; text-wrap: balance;
+  }
+  h1.title .cycle { font-style: italic; color: var(--terra); animation: hue 15s linear infinite; }
+  @keyframes hue { 0%{color:var(--terra)} 17%{color:var(--amber)} 34%{color:var(--teal)} 51%{color:var(--azure)} 68%{color:var(--violet)} 85%{color:var(--rose)} 100%{color:var(--terra)} }
+  @media (prefers-reduced-motion: reduce) { h1.title .cycle { animation: none; } }
+  .lead { color: var(--dim); font-size: 18.5px; line-height: 1.62; margin: 22px 0 0; max-width: 33em; }
+  .lead b { color: var(--paper); font-weight: 600; }
+  .cta-row { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 30px; }
+  .microtrust { margin-top: 22px; display: flex; flex-wrap: wrap; gap: 10px; }
+  .microtrust .chip {
+    display: inline-flex; align-items: center; gap: 9px;
+    padding: 8px 13px; border-radius: 999px;
+    border: 1px solid var(--line-soft);
+    background: color-mix(in srgb, var(--ink-2) 62%, transparent);
+    color: var(--dim); font-size: 13.5px; line-height: 1;
+    transition: color .2s ease, border-color .2s ease, background .2s ease, transform .2s ease;
+  }
+  .microtrust .chip:hover { color: var(--paper); border-color: var(--line); background: var(--ink-2); transform: translateY(-1px); }
+  .microtrust .chip svg { width: 15px; height: 15px; fill: none; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+  .microtrust svg.i-ok { stroke: var(--ok); }
+  .microtrust svg.i-priv { stroke: var(--terra); }
+  .microtrust svg.i-light { stroke: var(--amber); }
+
+  /* fanned persona stack behind the window */
+  .stage { position: relative; }
+  .fan { position: absolute; inset: 0; z-index: 0; pointer-events: none; }
+  .fan .tile { position: absolute; width: 62px; height: 62px; opacity: .9; }
+  .fan .t1 { top: -26px; left: 6%;  transform: rotate(-16deg); background: var(--violet); }
+  .fan .t2 { top: -40px; left: 34%; transform: rotate(-6deg); background: var(--amber); }
+  .fan .t3 { top: -30px; right: 20%; transform: rotate(7deg);  background: var(--rose); }
+  .fan .t4 { bottom: -22px; right: 4%; transform: rotate(14deg); background: var(--azure); }
+
+  /* ---------- app window mock ---------- */
+  .win {
+    position: relative; z-index: 1; border-radius: var(--r-lg); overflow: hidden;
+    background: var(--ink); border: 1px solid var(--line);
+    box-shadow: 0 40px 90px rgba(0,0,0,.6), 0 0 0 1px rgba(255,255,255,.02) inset;
+    font-size: 12px;
+  }
+  .win .bar { height: 34px; display: flex; align-items: center; gap: 7px; padding: 0 12px;
+              background: linear-gradient(180deg, rgba(194,113,79,.16), transparent); }
+  .win .light { width: 11px; height: 11px; border-radius: 50%; }
+  .win .r1 { background: #f0655a; } .win .r2 { background: #f4bd4e; } .win .r3 { background: #62c956; }
+  .win .body { display: grid; grid-template-columns: 168px 1fr; min-height: 300px; }
+  .win .side { border-right: 1px solid var(--line-soft); padding: 10px; display: flex; flex-direction: column; gap: 4px; background: #0d0c10; }
+  .win .search { display: flex; align-items: center; gap: 7px; background: #100f13; border: 1px solid var(--line-soft); border-radius: 8px; padding: 7px 9px; color: var(--faint); }
+  .win .search .mag { width: 11px; height: 11px; border: 1.4px solid var(--faint); border-radius: 50%; position: relative; }
+  .win .search .mag::after { content:""; position:absolute; width:5px; height:1.4px; background:var(--faint); transform: rotate(45deg); right:-3px; bottom:0; }
+  .win .sect { font-size: 9.5px; letter-spacing: .1em; text-transform: uppercase; color: var(--faint); padding: 8px 6px 3px; font-weight: 700; }
+  .win .prow { display: flex; align-items: center; gap: 9px; padding: 7px; border-radius: 8px; color: var(--dim); }
+  .win .prow.sel { background: #17151b; color: var(--paper); box-shadow: inset 0 0 0 1px var(--line); }
+  .win .prow .tile { width: 20px; height: 20px; border-radius: 30%; }
+  .win .prow .nm { font-size: 12.5px; font-weight: 500; }
+  .win .main { padding: 16px 18px; position: relative; }
+  .win .main::before { content:""; position:absolute; inset:0 0 auto 0; height:110px;
+                       background: radial-gradient(80% 120% at 30% -30%, rgba(194,113,79,.18), transparent 60%); pointer-events:none; }
+  .win .hero2 { display: flex; align-items: center; gap: 13px; position: relative; }
+  .win .hero2 .tile { width: 52px; height: 52px; border-radius: 24%; }
+  .win .hname { font-family: var(--serif); font-size: 25px; font-weight: 600; line-height: 1; }
+  .win .hsub { color: var(--dim); font-size: 12px; margin-top: 5px; }
+  .win .stats { display: grid; grid-template-columns: repeat(3,1fr); gap: 8px; margin-top: 18px; position: relative; }
+  .win .stat { background: var(--ink-2); border: 1px solid var(--line-soft); border-radius: 11px; padding: 10px 11px; }
+  .win .stat .k { font-size: 8.5px; letter-spacing: .07em; text-transform: uppercase; color: var(--faint); font-weight: 700; }
+  .win .stat .v { font-size: 14.5px; font-weight: 600; margin-top: 6px; }
+  .win .field { margin-top: 16px; }
+  .win .field .k { font-size: 8.5px; letter-spacing: .07em; text-transform: uppercase; color: var(--faint); font-weight: 700; }
+  .win .path { font-family: var(--mono); font-size: 11px; color: var(--dim); margin-top: 6px; }
+  .win .act { display: flex; align-items: center; gap: 9px; margin-top: 20px; }
+  .win .launch { background: var(--terra); color: #fff; border-radius: 9px; padding: 9px 13px; font-weight: 600; font-size: 12.5px; box-shadow: inset 0 1px 0 rgba(255,255,255,.2); }
+  .win .edit { background: var(--ink-3); border: 1px solid var(--line); border-radius: 9px; padding: 9px 13px; font-weight: 500; }
+  .win .kbd { margin-left: auto; display: flex; gap: 12px; color: var(--faint); font-size: 10.5px; }
+
+  /* ---------- section frame ---------- */
+  .section { padding: 78px 0; }
+  .section .head { max-width: 640px; }
+  .section h2 { font-family: var(--serif); font-weight: 600; font-size: clamp(28px, 3.6vw, 40px); line-height: 1.08; letter-spacing: -.015em; margin: 12px 0 0; text-wrap: balance; }
+  .section .sub { color: var(--dim); font-size: 17px; margin: 16px 0 0; max-width: 42em; }
+  .divider { height: 1px; background: linear-gradient(90deg, transparent, var(--line), transparent); border: 0; margin: 0; }
+
+  /* ---------- concept band (spectrum) ---------- */
+  .concept { text-align: center; }
+  .concept .head { margin: 0 auto; }
+  .spectrum { display: flex; justify-content: center; gap: 16px; margin-top: 44px; flex-wrap: wrap; }
+  .persona { display: flex; flex-direction: column; align-items: center; gap: 11px; width: 92px; }
+  .persona .tile { width: 60px; height: 60px; }
+  .persona .lbl { font-size: 13px; color: var(--dim); }
+  .persona .lbl .role { display: block; font-size: 11px; color: var(--faint); }
+
+  /* ---------- bento features ---------- */
+  .bento { display: grid; grid-template-columns: repeat(6, 1fr); gap: 16px; margin-top: 44px; }
+  .card { background: var(--ink-2); border: 1px solid var(--line-soft); border-radius: var(--r-lg); padding: 24px; position: relative; overflow: hidden; }
+  .card .ico { width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; margin-bottom: 16px; background: color-mix(in srgb, var(--c) 22%, var(--ink-3)); }
+  .card .ico svg { width: 18px; height: 18px; stroke: var(--c); fill: none; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+  .card h3 { font-size: 18px; font-weight: 650; margin: 0 0 8px; letter-spacing: -.01em; }
+  .card p { color: var(--dim); font-size: 14.5px; line-height: 1.55; margin: 0; }
+  .card.lg { grid-column: span 3; } .card.sm { grid-column: span 2; }
+  .card.wide { grid-column: span 3; }
+  .card.feature-hl { background: linear-gradient(160deg, color-mix(in srgb, var(--terra) 16%, var(--ink-2)), var(--ink-2)); border-color: color-mix(in srgb, var(--terra) 30%, var(--line-soft)); }
+
+  /* ---------- how it works ---------- */
+  .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 22px; margin-top: 44px; counter-reset: s; }
+  .step { position: relative; padding-top: 30px; }
+  .step .n { font-family: var(--mono); font-size: 13px; color: var(--terra); letter-spacing: .1em; }
+  .step h3 { font-family: var(--serif); font-size: 21px; font-weight: 600; margin: 12px 0 8px; }
+  .step p { color: var(--dim); font-size: 15px; margin: 0; }
+  .step::before { content: ""; position: absolute; top: 0; left: 0; width: 34px; height: 2px; background: var(--terra); }
+
+  /* ---------- tech line ---------- */
+  .tech { display: flex; flex-wrap: wrap; gap: 12px 30px; align-items: center; justify-content: center; text-align: center; }
+  .tech .item { display: inline-flex; align-items: baseline; gap: 9px; color: var(--dim); font-size: 15px; }
+  .tech .item b { color: var(--paper); font-family: var(--serif); font-size: 20px; font-weight: 600; }
+  .tech .item .mono { font-family: var(--mono); font-size: 13px; color: var(--paper); }
+
+  /* ---------- final CTA ---------- */
+  .final { text-align: center; padding: 90px 0; position: relative; }
+  .final .glow { position: absolute; inset: 0; z-index: -1; background: radial-gradient(50% 120% at 50% 20%, rgba(194,113,79,.20), transparent 60%); }
+  .final h2 { font-family: var(--serif); font-size: clamp(32px, 5vw, 54px); font-weight: 600; letter-spacing: -.02em; margin: 0; text-wrap: balance; }
+  .final .sub { color: var(--dim); font-size: 18px; margin: 18px auto 0; max-width: 30em; }
+  .final .cta-row { justify-content: center; }
+  .final .ver { margin-top: 16px; font-family: var(--mono); font-size: 12.5px; color: var(--faint); }
+
+  /* ---------- footer ---------- */
+  .foot { border-top: 1px solid var(--line-soft); padding: 40px 0 60px; color: var(--faint); font-size: 13.5px; }
+  .foot .row { display: flex; flex-wrap: wrap; gap: 18px; align-items: center; }
+  .foot .brand { font-size: 17px; color: var(--paper); }
+  .foot .spacer { flex: 1; }
+  .foot .disc { max-width: 100%; margin-top: 18px; line-height: 1.6; }
+  .foot a:hover { color: var(--paper); }
+
+  /* ---------- reveal ---------- */
+  .reveal { opacity: 0; transform: translateY(18px); transition: opacity .7s ease, transform .7s cubic-bezier(.2,.7,.2,1); }
+  .reveal.in { opacity: 1; transform: none; }
+  @media (prefers-reduced-motion: reduce) { .reveal { opacity: 1; transform: none; transition: none; } }
+
+  /* ---------- responsive ---------- */
+  @media (max-width: 900px) {
+    .hero .grid { grid-template-columns: 1fr; gap: 60px; }
+    .fan { display: none; }
+    .bento { grid-template-columns: repeat(2, 1fr); }
+    .card.lg, .card.sm, .card.wide { grid-column: span 2; }
+    .steps { grid-template-columns: 1fr; }
+    .nav .links { display: none; }
+  }
+  @media (max-width: 560px) {
+    .wrap { padding: 0 20px; }
+    .bento { grid-template-columns: 1fr; }
+    .card.lg, .card.sm, .card.wide { grid-column: span 1; }
+    .spectrum { gap: 10px; }
+    .persona { width: 74px; }
+  }
+
+  /* ---------- v2 polish ---------- */
+  section[id] { scroll-margin-top: 84px; }
+
+  /* atmosphere: slow aurora drift + depth vignette */
+  .atmos::before { animation: drift 26s ease-in-out infinite; }
+  @keyframes drift {
+    0%   { transform: translateX(-50%) translate3d(0,0,0) scale(1);       opacity: .82; }
+    50%  { transform: translateX(-50%) translate3d(34px,20px,0) scale(1.07); opacity: 1;  }
+    100% { transform: translateX(-50%) translate3d(0,0,0) scale(1);       opacity: .82; }
+  }
+  .atmos::after {
+    content: ""; position: absolute; inset: 0; pointer-events: none;
+    background: radial-gradient(130% 92% at 50% -12%, transparent 52%, rgba(0,0,0,.55));
+  }
+
+  /* hero window: premium shadow + gentle float + colour bloom beneath */
+  .win {
+    box-shadow: 0 54px 120px rgba(0,0,0,.62), 0 12px 34px rgba(0,0,0,.45), inset 0 0 0 1px rgba(255,255,255,.035);
+    animation: float 9s ease-in-out infinite;
+  }
+  @keyframes float { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-9px); } }
+  .stage::after {
+    content: ""; position: absolute; left: 50%; bottom: -7%; width: 72%; height: 68px;
+    transform: translateX(-50%); z-index: 0; filter: blur(20px);
+    background: radial-gradient(50% 100% at 50% 0%, rgba(194,113,79,.30), rgba(20,184,166,.10) 55%, transparent 72%);
+  }
+
+  /* buttons: soft top-gloss + warmer hover glow */
+  .btn-primary { background-image: linear-gradient(180deg, rgba(255,255,255,.17), rgba(255,255,255,0) 44%); }
+  .btn-primary:hover { box-shadow: inset 0 1px 0 rgba(255,255,255,.24), 0 12px 30px rgba(194,113,79,.44); }
+
+  /* feature cards: lift + accent border + corner bloom on hover */
+  .card { transition: transform .28s cubic-bezier(.2,.7,.2,1), border-color .28s ease, box-shadow .28s ease; }
+  .card::after {
+    content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none;
+    opacity: 0; transition: opacity .3s ease;
+    background: radial-gradient(120% 82% at 100% 0%, color-mix(in srgb, var(--c) 20%, transparent), transparent 58%);
+  }
+  .card:hover { transform: translateY(-5px); border-color: color-mix(in srgb, var(--c) 42%, var(--line)); box-shadow: 0 24px 54px rgba(0,0,0,.44); }
+  .card:hover::after { opacity: 1; }
+
+  /* persona tiles: lift on hover */
+  .persona .tile { transition: transform .26s cubic-bezier(.2,.7,.2,1), box-shadow .26s ease; }
+  .persona:hover .tile { transform: translateY(-6px) scale(1.07); box-shadow: 0 18px 36px rgba(0,0,0,.5); }
+
+  /* contact line under the CTA */
+  .contact { margin-top: 16px; font-size: 14.5px; color: var(--dim); }
+  .contact a { color: var(--terra); border-bottom: 1px solid color-mix(in srgb, var(--terra) 45%, transparent); padding-bottom: 1px; }
+  .contact a:hover { color: #fff; border-color: #fff; }
+  .foot a[href^="mailto"]:hover { color: var(--paper); }
+
+  /* FAQ accordion */
+  .faq { margin-top: 36px; display: flex; flex-direction: column; border-top: 1px solid var(--line-soft); }
+  .faq details { border-bottom: 1px solid var(--line-soft); }
+  .faq summary { list-style: none; cursor: pointer; padding: 20px 44px 20px 0; position: relative; font-family: var(--serif); font-size: 19px; color: var(--paper); }
+  .faq summary::-webkit-details-marker { display: none; }
+  .faq summary::after { content: "+"; position: absolute; right: 8px; top: 50%; transform: translateY(-50%); font-family: var(--sans); font-weight: 400; font-size: 24px; color: var(--dim); line-height: 1; }
+  .faq details[open] summary::after { content: "\2212"; }
+  .faq summary:hover { color: #fff; }
+  .faq p { margin: 0 0 22px; color: var(--dim); font-size: 15.5px; line-height: 1.62; max-width: 64ch; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .atmos::before, .win { animation: none !important; }
+  }
+</style>
+
+<div class="atmos"><div class="grain"></div></div>
+
+<!-- burst mark, defined once -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><symbol id="burst" viewBox="0 0 100 100">
+  <g fill="currentColor">
+    <rect x="46" y="7" width="8" height="34" rx="4"/>
+    <rect x="46" y="7" width="8" height="34" rx="4" transform="rotate(30 50 50)"/>
+    <rect x="46" y="7" width="8" height="34" rx="4" transform="rotate(60 50 50)"/>
+    <rect x="46" y="7" width="8" height="34" rx="4" transform="rotate(90 50 50)"/>
+    <rect x="46" y="7" width="8" height="34" rx="4" transform="rotate(120 50 50)"/>
+    <rect x="46" y="7" width="8" height="34" rx="4" transform="rotate(150 50 50)"/>
+    <rect x="46" y="7" width="8" height="34" rx="4" transform="rotate(180 50 50)"/>
+    <rect x="46" y="7" width="8" height="34" rx="4" transform="rotate(210 50 50)"/>
+    <rect x="46" y="7" width="8" height="34" rx="4" transform="rotate(240 50 50)"/>
+    <rect x="46" y="7" width="8" height="34" rx="4" transform="rotate(270 50 50)"/>
+    <rect x="46" y="7" width="8" height="34" rx="4" transform="rotate(300 50 50)"/>
+    <rect x="46" y="7" width="8" height="34" rx="4" transform="rotate(330 50 50)"/>
+  </g>
+</symbol></svg>
+
+<!-- ================= nav ================= -->
+<header class="nav">
+  <div class="wrap row">
+    <span class="brand"><span class="tile" style="width:26px;height:26px;background:var(--terra)"><svg><use href="#burst"/></svg></span> Personae</span>
+    <nav class="links">
+      <a href="#features">Features</a>
+      <a href="#how">How it works</a>
+      <a href="#faq">FAQ</a>
+      <a href="mailto:amory.dev@gmail.com">Contact</a>
+    </nav>
+    <span class="spacer"></span>
+    <a class="btn btn-primary" href="#get">Download</a>
+  </div>
+</header>
+
+<!-- ================= hero ================= -->
+<section class="hero">
+  <div class="wrap grid">
+    <div class="hero-copy">
+      <span class="pill"><span class="dot"></span> macOS &amp; Windows</span>
+      <h1 class="title">Every Claude account,<br><span class="cycle">at once.</span></h1>
+      <p class="lead">Personae runs <b>multiple Claude accounts</b> at once — each Claude Desktop profile gets its own window, history, and colour, so Work, Personal, and every client stay signed in side by side. No more logging out to switch.</p>
+      <div class="cta-row">
+        <a class="btn btn-primary" href="#get">Download <span class="os">for macOS</span></a>
+        <a class="btn btn-ghost" href="#get">Windows</a>
+      </div>
+      <div class="microtrust">
+        <span class="chip"><svg class="i-ok" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6L9 17l-5-5"/></svg> Free</span>
+        <span class="chip"><svg class="i-priv" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l7 3v5c0 4.5-3 7.6-7 9-4-1.4-7-4.5-7-9V6z"/><path d="M9.4 12l1.9 1.9L15 10"/></svg> Local-first — data never leaves your Mac</span>
+        <span class="chip"><svg class="i-light" viewBox="0 0 24 24" aria-hidden="true"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg> ~3&nbsp;MB, native</span>
+      </div>
+    </div>
+
+    <div class="stage reveal">
+      <div class="fan">
+        <span class="tile t1"><svg><use href="#burst"/></svg></span>
+        <span class="tile t2"><svg><use href="#burst"/></svg></span>
+        <span class="tile t3"><svg><use href="#burst"/></svg></span>
+        <span class="tile t4"><svg><use href="#burst"/></svg></span>
+      </div>
+      <div class="win" role="img" aria-label="The Personae app: a sidebar of coloured profiles and a detail view for the Personal profile.">
+        <div class="bar"><span class="light r1"></span><span class="light r2"></span><span class="light r3"></span></div>
+        <div class="body">
+          <div class="side">
+            <div class="search"><span class="mag"></span> Search profiles…</div>
+            <div class="sect">Profiles</div>
+            <div class="prow sel"><span class="tile" style="background:var(--terra)"><svg><use href="#burst"/></svg></span><span class="nm">Personal</span></div>
+            <div class="prow"><span class="tile rundot" style="background:var(--teal)"><svg><use href="#burst"/></svg></span><span class="nm">Work</span></div>
+            <div class="prow"><span class="tile" style="background:var(--violet)"><svg><use href="#burst"/></svg></span><span class="nm">Acme client</span></div>
+            <div class="prow"><span class="tile" style="background:var(--amber)"><svg><use href="#burst"/></svg></span><span class="nm">Studio</span></div>
+          </div>
+          <div class="main">
+            <div class="hero2">
+              <span class="tile" style="background:var(--terra)"><svg><use href="#burst"/></svg></span>
+              <div><div class="hname">Personal</div><div class="hsub">Not running</div></div>
+            </div>
+            <div class="stats">
+              <div class="stat"><div class="k">Storage</div><div class="v">7.1 MB</div></div>
+              <div class="stat"><div class="k">Last active</div><div class="v">Just now</div></div>
+              <div class="stat"><div class="k">Created</div><div class="v">Today</div></div>
+            </div>
+            <div class="field"><div class="k">Data directory</div><div class="path">~/Library/Application Support/Claude-Personal</div></div>
+            <div class="act">
+              <span class="launch">Launch Personal ⏎</span>
+              <span class="edit">Edit</span>
+              <span class="kbd">⌘L launch &nbsp; ⌫ delete</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<hr class="divider" />
+
+<!-- ================= concept band ================= -->
+<section class="section concept">
+  <div class="wrap">
+    <div class="head reveal">
+      <span class="eyebrow">One you, many personae</span>
+      <h2>A colour for every side of your work.</h2>
+      <p class="sub" style="margin-left:auto;margin-right:auto">Each profile is its own account with its own identity. Personae gives it a tinted icon and accent so you always know which Claude you're talking to.</p>
+    </div>
+    <div class="spectrum reveal">
+      <div class="persona"><span class="tile" style="background:var(--terra)"><svg><use href="#burst"/></svg></span><span class="lbl">Personal<span class="role">your own</span></span></div>
+      <div class="persona"><span class="tile" style="background:var(--teal)"><svg><use href="#burst"/></svg></span><span class="lbl">Work<span class="role">day job</span></span></div>
+      <div class="persona"><span class="tile" style="background:var(--violet)"><svg><use href="#burst"/></svg></span><span class="lbl">Client<span class="role">billable</span></span></div>
+      <div class="persona"><span class="tile" style="background:var(--rose)"><svg><use href="#burst"/></svg></span><span class="lbl">Side project<span class="role">nights</span></span></div>
+      <div class="persona"><span class="tile" style="background:var(--amber)"><svg><use href="#burst"/></svg></span><span class="lbl">Research<span class="role">a sandbox</span></span></div>
+      <div class="persona"><span class="tile" style="background:var(--azure)"><svg><use href="#burst"/></svg></span><span class="lbl">Team<span class="role">shared</span></span></div>
+    </div>
+  </div>
+</section>
+
+<hr class="divider" />
+
+<!-- ================= features (bento) ================= -->
+<section class="section" id="features">
+  <div class="wrap">
+    <div class="head reveal">
+      <span class="eyebrow">What it does</span>
+      <h2>Separate accounts that never bleed into each other.</h2>
+    </div>
+    <div class="bento">
+      <div class="card lg feature-hl reveal" style="--c:var(--terra)">
+        <div class="ico"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="8" height="16" rx="2"/><rect x="14" y="4" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="6" rx="2"/></svg></div>
+        <h3>Truly isolated</h3>
+        <p>Every profile gets its own data directory — separate login, chat history, cookies, and MCP settings. Nothing from one account is ever visible to another.</p>
+      </div>
+      <div class="card sm reveal" style="--c:var(--teal)">
+        <div class="ico"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="13" height="13" rx="2"/><rect x="8" y="9" width="13" height="10" rx="2"/></svg></div>
+        <h3>Run them together</h3>
+        <p>No single-instance lock. Open Work and Personal at the same time — each in its own Dock icon and window.</p>
+      </div>
+      <div class="card sm reveal" style="--c:var(--violet)">
+        <div class="ico"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="2.5" fill="var(--c)" stroke="none"/></svg></div>
+        <h3>Colour is identity</h3>
+        <p>A tinted icon and accent per profile, plus a green dot when it's running. Know which account you're in at a glance.</p>
+      </div>
+      <div class="card sm reveal" style="--c:var(--amber)">
+        <div class="ico"><svg viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="12" rx="2"/><path d="M7 10h0M11 10h0M15 10h0M8 14h8"/></svg></div>
+        <h3>Made for the keyboard</h3>
+        <p>⌘N for a new profile, ⌘L to launch, ⏎ to open, ⌫ to remove. Search and switch without touching the mouse.</p>
+      </div>
+      <div class="card wide reveal" style="--c:var(--azure)">
+        <div class="ico"><svg viewBox="0 0 24 24"><path d="M12 3l7 3v5c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z"/><path d="M9.5 12l1.8 1.8L15 10"/></svg></div>
+        <h3>Local &amp; private</h3>
+        <p>No account to create, no server, no telemetry. Personae just orchestrates the Claude Desktop you already installed — everything stays on your machine.</p>
+      </div>
+      <div class="card wide reveal" style="--c:var(--rose)">
+        <div class="ico"><svg viewBox="0 0 24 24"><path d="M12 3v6M12 15v6M4 8l4 2M16 14l4 2M20 8l-4 2M8 14l-4 2"/></svg></div>
+        <h3>Feather-light, survives updates</h3>
+        <p>A tiny native app built on Tauri — a few megabytes, not another Chromium. It wraps your installed Claude, so it keeps working after every Claude auto-update.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<hr class="divider" />
+
+<!-- ================= how it works ================= -->
+<section class="section" id="how">
+  <div class="wrap">
+    <div class="head reveal">
+      <span class="eyebrow">Three steps</span>
+      <h2>From one account to many in under a minute.</h2>
+    </div>
+    <div class="steps">
+      <div class="step reveal">
+        <div class="n">STEP 1</div>
+        <h3>Name a profile</h3>
+        <p>“Work”, “Personal”, a client — whatever you juggle. Pick a colour, or let Personae choose one for you.</p>
+      </div>
+      <div class="step reveal">
+        <div class="n">STEP 2</div>
+        <h3>It carves out a space</h3>
+        <p>Personae creates an isolated data directory and a tinted app icon, then registers it with your system so it shows up in Spotlight and the Dock.</p>
+      </div>
+      <div class="step reveal">
+        <div class="n">STEP 3</div>
+        <h3>Launch &amp; sign in once</h3>
+        <p>Open it, sign in, and it stays signed in — in its own window, forever. Repeat for as many accounts as you need.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<hr class="divider" />
+
+<!-- ================= FAQ ================= -->
+<section class="section" id="faq">
+  <div class="wrap">
+    <div class="head reveal">
+      <span class="eyebrow">FAQ</span>
+      <h2>Running multiple Claude accounts, answered.</h2>
+    </div>
+    <div class="faq reveal">
+      <details>
+        <summary>Can I run two (or more) Claude accounts at the same time?</summary>
+        <p>Yes. Personae has no instance limit — open as many Claude Desktop accounts as you like, all at once, each in its own window and Dock icon.</p>
+      </details>
+      <details>
+        <summary>How do I run multiple Claude accounts on a Mac?</summary>
+        <p>Install Personae, click <b>New profile</b> for each account (Work, Personal, a client…), then Launch. Every profile is fully isolated with its own login and history — sign in once and it stays signed in.</p>
+      </details>
+      <details>
+        <summary>Does it work on Windows?</summary>
+        <p>Yes — macOS 11+ and Windows 10+. The same isolation works on both platforms.</p>
+      </details>
+      <details>
+        <summary>Is my data private? Does Personae see my logins?</summary>
+        <p>No. There's no account, no server, and no telemetry. Personae only orchestrates the Claude Desktop you already installed; each profile's data stays on your machine, isolated from the others.</p>
+      </details>
+      <details>
+        <summary>Will it break when Claude updates?</summary>
+        <p>No. Personae wraps your installed Claude rather than repackaging it, so it keeps working after Claude's auto-updates.</p>
+      </details>
+      <details>
+        <summary>Is Personae free? Is it official?</summary>
+        <p>It's free. It's an independent companion tool — not affiliated with, or endorsed by, Anthropic.</p>
+      </details>
+    </div>
+  </div>
+</section>
+
+<!-- ================= final CTA ================= -->
+<section class="final" id="get">
+  <div class="glow"></div>
+  <div class="wrap reveal">
+    <span class="eyebrow">Give every account a home</span>
+    <h2 class="serif" style="margin-top:14px">Stop signing out.<br>Start with Personae.</h2>
+    <p class="sub">Download it, create your first profile, and never lose your place in a conversation again.</p>
+    <div class="cta-row">
+      <a class="btn btn-primary" href="#" data-download="macos">Download <span class="os">for macOS</span></a>
+      <a class="btn btn-ghost" href="#" data-download="windows">Download for Windows</a>
+    </div>
+    <div class="ver">v0.1.0 · Universal (Apple silicon &amp; Intel) · macOS 11+ &amp; Windows 10+</div>
+    <div class="contact">Questions or feedback? <a href="mailto:amory.dev@gmail.com">amory.dev@gmail.com</a></div>
+  </div>
+</section>
+
+<!-- ================= footer ================= -->
+<footer class="foot">
+  <div class="wrap">
+    <div class="row">
+      <span class="brand serif"><span class="tile" style="width:22px;height:22px;background:var(--terra);vertical-align:middle;display:inline-grid"><svg><use href="#burst"/></svg></span> Personae</span>
+      <span class="spacer"></span>
+      <a href="#features">Features</a>
+      <a href="#how">How it works</a>
+      <a href="#get">Download</a>
+      <a href="mailto:amory.dev@gmail.com">amory.dev@gmail.com</a>
+    </div>
+    <p class="disc">A companion utility for Claude Desktop. Not affiliated with, sponsored by, or endorsed by Anthropic — “Claude” is a trademark of Anthropic. Personae runs entirely on your own machine and never sees your data.</p>
+    <p class="disc" style="margin-top:6px">© 2026 Personae · Made for people who wear more than one hat.</p>
+  </div>
+</footer>
+
+<script>
+  // Scroll-reveal (respect reduced motion)
+  (function () {
+    var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    var els = document.querySelectorAll('.reveal');
+    if (reduce || !('IntersectionObserver' in window)) {
+      els.forEach(function (e) { e.classList.add('in'); });
+      return;
+    }
+    var io = new IntersectionObserver(function (entries) {
+      entries.forEach(function (en) {
+        if (en.isIntersecting) { en.target.classList.add('in'); io.unobserve(en.target); }
+      });
+    }, { threshold: 0.12, rootMargin: '0px 0px -8% 0px' });
+    els.forEach(function (e) { io.observe(e); });
+  })();
+
+  // Download buttons are placeholders until release URLs are wired.
+  document.querySelectorAll('[data-download]').forEach(function (a) {
+    a.addEventListener('click', function (ev) {
+      ev.preventDefault();
+      var was = a.querySelector('.os') ? a.querySelector('.os').textContent : '';
+      var label = a.childNodes[0];
+      var orig = label.textContent;
+      label.textContent = 'Coming soon ';
+      setTimeout(function () { label.textContent = orig; }, 1400);
+    });
+  });
+</script>
+
+</body>
+</html>

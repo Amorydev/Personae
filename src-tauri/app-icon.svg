@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="fill" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#CE8161"/>
+      <stop offset="1" stop-color="#AE5E38"/>
+    </linearGradient>
+    <linearGradient id="gloss" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.20"/>
+      <stop offset="0.45" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+    <clipPath id="sq"><rect x="100" y="100" width="824" height="824" rx="186" ry="186"/></clipPath>
+  </defs>
+
+  <!-- terracotta squircle on Apple's 1024 icon grid (824 body, ~100 margin) -->
+  <rect x="100" y="100" width="824" height="824" rx="186" ry="186" fill="url(#fill)"/>
+  <rect x="100" y="100" width="824" height="824" rx="186" ry="186" fill="url(#gloss)" clip-path="url(#sq)"/>
+
+  <!-- Personae burst mark (12 tapered blades), centred -->
+  <g transform="translate(244,244) scale(5.35)" fill="#ffffff">
+    <rect x="46" y="7" width="8" height="34" rx="4"/>
+    <rect x="46" y="7" width="8" height="34" rx="4" transform="rotate(30 50 50)"/>
+    <rect x="46" y="7" width="8" height="34" rx="4" transform="rotate(60 50 50)"/>
+    <rect x="46" y="7" width="8" height="34" rx="4" transform="rotate(90 50 50)"/>
+    <rect x="46" y="7" width="8" height="34" rx="4" transform="rotate(120 50 50)"/>
+    <rect x="46" y="7" width="8" height="34" rx="4" transform="rotate(150 50 50)"/>
+    <rect x="46" y="7" width="8" height="34" rx="4" transform="rotate(180 50 50)"/>
+    <rect x="46" y="7" width="8" height="34" rx="4" transform="rotate(210 50 50)"/>
+    <rect x="46" y="7" width="8" height="34" rx="4" transform="rotate(240 50 50)"/>
+    <rect x="46" y="7" width="8" height="34" rx="4" transform="rotate(270 50 50)"/>
+    <rect x="46" y="7" width="8" height="34" rx="4" transform="rotate(300 50 50)"/>
+    <rect x="46" y="7" width="8" height="34" rx="4" transform="rotate(330 50 50)"/>
+  </g>
+</svg>
