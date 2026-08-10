@@ -224,11 +224,12 @@ input, .path { -webkit-user-select: text; user-select: text; }
 }
 .modal-title { font-family: var(--serif); font-size: 19px; font-weight: 600; }
 .modal-card label.k { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--text-mute); font-weight: 600; }
-.modal-card input.text {
+.modal-card input.text, .modal-card select.text {
   all: unset; background: #0e0e12; border: 1px solid var(--border); border-radius: var(--r);
-  padding: 10px 12px; color: var(--text); font-size: 14px;
+  padding: 10px 12px; color: var(--text); font-size: 14px; box-sizing: border-box; width: 100%;
 }
-.modal-card input.text:focus { border-color: color-mix(in srgb, var(--accent) 60%, var(--border)); }
+.modal-card input.text:focus, .modal-card select.text:focus { border-color: color-mix(in srgb, var(--accent) 60%, var(--border)); }
+.row { display: flex; align-items: center; gap: 10px; }
 .swatches { display: flex; gap: 10px; flex-wrap: wrap; }
 .sw { width: 26px; height: 26px; border-radius: 8px; cursor: pointer; box-shadow: inset 0 1px 0 rgba(255,255,255,.2); outline: 2px solid transparent; outline-offset: 2px; }
 .sw.sel { outline-color: var(--text); }
@@ -246,3 +247,35 @@ kbd {
 .primary kbd { background: rgba(0,0,0,.24); border-color: rgba(0,0,0,.28); color: rgba(255,255,255,.92); }
 
 .hidden { display: none !important; }
+
+/* ---------- segmented view toggle (Desktop / CLI) ---------- */
+.segmented { display: inline-flex; border: 1px solid var(--border); border-radius: 9px; overflow: hidden; background: #16161b; flex: none; }
+.segmented .seg { padding: 7px 14px; background: transparent; border: 0; color: var(--text-dim); font: inherit; font-size: 13px; cursor: pointer; }
+.segmented .seg:hover { color: var(--text); }
+.segmented .seg.sel { background: var(--accent); color: #fff; font-weight: 600; }
+
+/* ---------- CLI list badge ---------- */
+.p-item .badge { margin-left: auto; flex: none; font-size: 10px; letter-spacing: .03em; text-transform: uppercase;
+  font-weight: 700; padding: 2px 6px; border-radius: 999px; }
+.badge.warn { color: var(--warn); background: color-mix(in srgb, var(--warn) 16%, transparent);
+  border: 1px solid color-mix(in srgb, var(--warn) 40%, transparent); }
+
+/* ---------- small icon button (e.g. remove a Workspace row) ---------- */
+.mini {
+  flex: none; width: 20px; height: 20px; display: inline-grid; place-items: center;
+  border: 0; background: transparent; color: var(--text-mute); border-radius: 6px;
+  font-size: 11px; line-height: 1; cursor: pointer;
+}
+.mini:hover { background: var(--panel); color: var(--warn); }
+
+/* ---------- modal hint text ---------- */
+.modal-card .hint { font-size: 13px; color: var(--text-dim); line-height: 1.5; margin: 0; }
+.modal-card .hint code { background: #1a1a20; padding: 1px 5px; border-radius: 4px; font-family: var(--mono); font-size: 12px; }
+.primary:disabled { opacity: .5; cursor: not-allowed; filter: none; }
+
+/* ---------- Open-in-IDE modal path rows (same look as .field .path) ---------- */
+#ide-account, #ide-folder {
+  margin-top: 8px; font-family: var(--mono); font-size: 13px;
+  color: var(--text-dim); word-break: break-all; line-height: 1.5;
+  cursor: pointer;
+}

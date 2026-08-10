@@ -8,7 +8,7 @@
     <script type="module" src="/main.js" defer></script>
   </head>
   <body>
-    <div class="app">
+    <div class="app" id="app-desktop">
       <!-- ================= sidebar ================= -->
       <aside class="sidebar">
         <div class="side-head" data-tauri-drag-region></div>
@@ -29,6 +29,10 @@
       <main class="detail">
         <div class="detail-head" data-tauri-drag-region>
           <div class="spacer" data-tauri-drag-region></div>
+          <div class="segmented">
+            <button class="seg sel" data-view="desktop">Desktop</button>
+            <button class="seg" data-view="cli">CLI</button>
+          </div>
           <button id="new-top" class="newtop"><span class="plus">+</span> New profile <kbd>⌘</kbd><kbd>N</kbd></button>
         </div>
 
@@ -52,6 +56,40 @@
           <span class="link" id="repair-link" title="Rewrite launchers to force native arch">Repair</span>
           <span class="ver">v0.1.0</span>
           <span class="link" id="feedback">💬 Send feedback</span>
+        </div>
+      </main>
+    </div>
+
+    <!-- ================= CLI view ================= -->
+    <div class="app hidden" id="cli-view">
+      <aside class="sidebar">
+        <div class="side-head" data-tauri-drag-region></div>
+        <div class="section">CLI accounts</div>
+        <ul id="cli-list" class="profiles"></ul>
+        <div class="side-foot">
+          <button id="cli-new-side" class="newbtn"><span class="plus">+</span> New CLI account</button>
+        </div>
+        <div class="section">Workspaces</div>
+        <ul id="ws-list" class="profiles"></ul>
+      </aside>
+
+      <main class="detail cli-detail">
+        <div class="detail-head" data-tauri-drag-region>
+          <div class="spacer" data-tauri-drag-region></div>
+          <div class="segmented">
+            <button class="seg sel" data-view="desktop">Desktop</button>
+            <button class="seg" data-view="cli">CLI</button>
+          </div>
+        </div>
+
+        <div id="cli-detail-body" class="detail-body"><!-- filled by JS --></div>
+
+        <div id="cli-actionbar" class="actionbar hidden">
+          <button id="cli-primary" class="primary"></button>
+          <button id="cli-login" class="btn">Log in</button>
+          <button id="cli-open-ide" class="btn">Open in IDE…</button>
+          <div class="spacer"></div>
+          <button id="cli-delete" class="danger">Delete</button>
         </div>
       </main>
     </div>
@@ -91,6 +129,53 @@
         <div class="modal-actions">
           <button id="del-cancel" class="btn">Cancel</button>
           <button id="del-go" class="danger">Delete profile</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ================= CLI create modal ================= -->
+    <div id="cli-create-modal" class="modal hidden">
+      <div class="modal-card">
+        <div class="modal-title">New CLI account</div>
+        <label class="k" for="cli-new-name">Name</label>
+        <input id="cli-new-name" class="text" placeholder="e.g. Work, Personal, Client" autocomplete="off" spellcheck="false" />
+        <div class="modal-actions">
+          <button id="cli-create-cancel" class="btn">Cancel</button>
+          <button id="cli-create-go" class="primary">Create account</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ================= CLI delete modal ================= -->
+    <div id="cli-del-modal" class="modal hidden">
+      <div class="modal-card">
+        <div id="cli-del-title" class="modal-title"></div>
+        <p class="hint">This removes the launcher, its login, and its CLI config directory. This cannot be undone.</p>
+        <div class="modal-actions">
+          <button id="cli-del-cancel" class="btn">Cancel</button>
+          <button id="cli-del-go" class="danger">Delete account</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ================= Open in IDE modal ================= -->
+    <div id="ide-modal" class="modal hidden">
+      <div class="modal-card">
+        <div class="modal-title">Open in IDE</div>
+        <label class="k">Account</label>
+        <div id="ide-account" class="path"></div>
+        <label class="k" for="ide-select">IDE</label>
+        <select id="ide-select" class="text"></select>
+        <label class="k">Project folder</label>
+        <div class="row">
+          <div id="ide-folder" class="path" style="flex:1">No folder chosen</div>
+          <button id="ide-pick" class="btn">Choose…</button>
+        </div>
+        <p class="hint">Opening the project sets <code>CLAUDE_CONFIG_DIR</code> for its terminals and auto-opens a Claude terminal on this account (approve “Allow automatic tasks” the first time). Just type <code>claude</code> in any terminal there.</p>
+        <div id="ide-status" class="hint"></div>
+        <div class="modal-actions">
+          <button id="ide-cancel" class="btn">Cancel</button>
+          <button id="ide-go" class="primary">Open</button>
         </div>
       </div>
     </div>

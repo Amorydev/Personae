@@ -16,6 +16,21 @@ const MOCK = [
     created: now() - 86400 * 9, last_active: now() - 4200 },
 ];
 
+const MOCK_CLI = [
+  { name: "Work CLI", slug: "work-cli", config_dir: "/Users/you/Library/Application Support/ClaudeProfilesCLI/work-cli",
+    launcher_path: "/Users/you/Applications/Claude Profiles CLI/Work CLI.command",
+    logged_in: true, account_email: "work@corp.com", data_size: "12M", created: now() - 86400, last_active: now() - 300 },
+  { name: "Personal CLI", slug: "personal-cli", config_dir: "/Users/you/Library/Application Support/ClaudeProfilesCLI/personal-cli",
+    launcher_path: "/Users/you/Applications/Claude Profiles CLI/Personal CLI.command",
+    logged_in: false, account_email: null, data_size: "0B", created: now() - 3600, last_active: null },
+];
+
+const MOCK_WS = [
+  { id: "cursorwork-cli/Users/you/Projects/demo", account_slug: "work-cli", account_name: "Work CLI",
+    ide_id: "cursor", ide_name: "Cursor", project_path: "/Users/you/Projects/demo",
+    created: now()-3600, last_opened: now()-600 },
+];
+
 async function invoke(cmd, args) {
   if (hasTauri) return window.__TAURI__.core.invoke(cmd, args);
   // ---- browser mock ----
@@ -37,6 +52,31 @@ async function invoke(cmd, args) {
     case "repair_profiles": return MOCK.length;
     case "reveal_path": console.log("reveal", args.path); return;
     case "open_url": console.log("open", args.url); return;
+    case "cli_available": return true;
+    case "list_cli_profiles": return structuredClone(MOCK_CLI);
+    case "create_cli_profile": {
+      const slug = args.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+      MOCK_CLI.push({ name: args.name, slug, config_dir: `/Users/you/Library/Application Support/ClaudeProfilesCLI/${slug}`,
+        launcher_path: `/Users/you/Applications/Claude Profiles CLI/${args.name}.command`,
+        logged_in: false, account_email: null, data_size: "0B", created: now(), last_active: now() });
+      return;
+    }
+    case "login_cli_profile": console.log("login", args.name); return;
+    case "launch_cli_profile": console.log("launch cli", args.name); return;
+    case "delete_cli_profile": { const i = MOCK_CLI.findIndex(m => m.name === args.name); if (i >= 0) MOCK_CLI.splice(i, 1); return; }
+    case "list_ides": return [
+      { id: "vscode", name: "Visual Studio Code", cli_path: "/usr/local/bin/code" },
+      { id: "cursor", name: "Cursor", cli_path: "/Applications/Cursor.app/…/cursor" },
+    ];
+    case "pick_folder": return "/Users/you/Projects/demo";
+    case "open_in_ide": console.log("open_in_ide", args); return;
+    case "list_workspaces": return structuredClone(MOCK_WS);
+    case "save_workspace": { const id = `${args.ideId}${args.accountSlug}${args.projectPath}`;
+      if (!MOCK_WS.some(w=>w.id===id)) MOCK_WS.push({ id, account_slug: args.accountSlug, account_name: args.accountName,
+        ide_id: args.ideId, ide_name: args.ideName, project_path: args.projectPath,
+        created: args.now, last_opened: args.now }); return; }
+    case "delete_workspace": { const i = MOCK_WS.findIndex(w=>w.id===args.id); if(i>=0) MOCK_WS.splice(i,1); return; }
+    case "open_workspace": console.log("open_workspace", args.id); return;
     default: return;
   }
 }
@@ -103,6 +143,11 @@ let selected = null; // slug
 let query = "";
 let claudeFound = true;
 
+let view = "desktop";        // "desktop" | "cli"
+let cliProfiles = [];
+let cliSelected = null;      // slug
+let cliAvailable = true;
+
 function filtered() {
   const q = query.trim().toLowerCase();
   return q ? profiles.filter((p) => p.name.toLowerCase().includes(q)) : profiles;
@@ -143,7 +188,7 @@ function renderDetail() {
     return;
   }
   bar.classList.remove("hidden");
-  $(".detail").style.setProperty("--accent", p.tint || "#c2714f");
+  $("#app-desktop .detail").style.setProperty("--accent", p.tint || "#c2714f");
 
   body.innerHTML = "";
   const hero = document.createElement("div");
@@ -285,6 +330,9 @@ function closeModals() {
   $("#create-modal").classList.add("hidden");
   $("#edit-modal").classList.add("hidden");
   $("#del-modal").classList.add("hidden");
+  $("#cli-create-modal")?.classList.add("hidden");
+  $("#cli-del-modal")?.classList.add("hidden");
+  $("#ide-modal")?.classList.add("hidden");
   pendingDelete = null;
 }
 function anyModalOpen() {
@@ -308,8 +356,10 @@ document.addEventListener("keydown", (e) => {
   if (e.key === "Escape") { if (anyModalOpen()) closeModals(); return; }
   if (anyModalOpen()) {
     if (e.key === "Enter" && !$("#create-modal").classList.contains("hidden")) { e.preventDefault(); doCreate(); }
+    if (e.key === "Enter" && !$("#cli-create-modal").classList.contains("hidden")) { e.preventDefault(); doCliCreate(); }
     return;
   }
+  if (view !== "desktop") return;   // CLI view uses buttons; don't drive the hidden Desktop model
   if (meta && e.key.toLowerCase() === "n") { e.preventDefault(); openCreate(); return; }
   if (meta && e.key.toLowerCase() === "l") { e.preventDefault(); const p = current(); if (p && !p.running) doLaunch(p); return; }
   if (meta && e.key.toLowerCase() === "r") { e.preventDefault(); invoke("repair_profiles").then(() => reload()); return; }
@@ -320,6 +370,202 @@ document.addEventListener("keydown", (e) => {
   else if (e.key === "ArrowUp") { e.preventDefault(); moveSelection(-1); }
   else if (e.key === "Backspace" || e.key === "Delete") { e.preventDefault(); openDelete(); }
 });
+
+// ---------- CLI view ----------
+function cliCurrent() { return cliProfiles.find((p) => p.slug === cliSelected) || null; }
+
+function setView(v) {
+  view = v;
+  document.querySelectorAll(".segmented .seg").forEach((b) => b.classList.toggle("sel", b.dataset.view === v));
+  // Desktop content root is the whole `.app` grid (#app-desktop: sidebar + detail), not just <main> —
+  // hiding only <main> would leave the Desktop sidebar showing next to the CLI view's own sidebar.
+  $("#app-desktop").classList.toggle("hidden", v === "cli");
+  $("#cli-view").classList.toggle("hidden", v !== "cli");
+  if (v === "cli") reloadCli();
+}
+
+async function reloadCli() {
+  try {
+    cliAvailable = await invoke("cli_available");
+    $("#cli-new-side").disabled = !cliAvailable;
+    cliProfiles = await invoke("list_cli_profiles");
+    if (!cliProfiles.some((p) => p.slug === cliSelected)) cliSelected = cliProfiles[0]?.slug ?? null;
+    renderCliList();
+    renderCliDetail();
+    await reloadWorkspaces();
+  } catch (e) { console.error(e); }
+}
+
+function renderCliList() {
+  const ul = $("#cli-list");
+  ul.innerHTML = "";
+  for (const p of cliProfiles) {
+    const li = document.createElement("li");
+    li.className = "p-item" + (p.slug === cliSelected ? " sel" : "");
+    const nm = document.createElement("span");
+    nm.className = "nm";
+    nm.textContent = p.name;
+    li.appendChild(nm);
+    if (!p.logged_in) {
+      const w = document.createElement("span");
+      w.className = "badge warn";
+      w.textContent = "no login";
+      li.appendChild(w);
+    }
+    li.onclick = () => { cliSelected = p.slug; renderCliList(); renderCliDetail(); };
+    ul.appendChild(li);
+  }
+}
+
+function renderCliDetail() {
+  const body = $("#cli-detail-body");
+  const bar = $("#cli-actionbar");
+  if (!cliAvailable) {
+    bar.classList.add("hidden");
+    body.innerHTML = `<div class="empty"><div class="big">CLI profiles need Claude Code</div>
+      <div class="small">Install the <code>claude</code> CLI (macOS only for now).</div></div>`;
+    return;
+  }
+  const p = cliCurrent();
+  if (!p) {
+    bar.classList.add("hidden");
+    body.innerHTML = `<div class="empty"><div class="big">No CLI account</div>
+      <div class="small">Create one, then log in — a real Claude account login, isolated per profile.</div></div>`;
+    return;
+  }
+  bar.classList.remove("hidden");
+  const sub = p.account_email
+    ? `Logged in — ${escapeHtml(p.account_email)}`
+    : '<span style="color:var(--warn)">Not logged in — click "Log in"</span>';
+  body.innerHTML = `
+    <div class="hero"><div class="meta">
+      <div class="name">${escapeHtml(p.name)}</div>
+      <div class="sub">${sub}</div>
+    </div></div>
+    <div class="stats">
+      <div class="stat"><div class="k">Account</div><div class="v">${p.account_email ? escapeHtml(p.account_email) : "—"}</div></div>
+      <div class="stat"><div class="k">Storage</div><div class="v">${prettySize(p.data_size)}</div></div>
+      <div class="stat"><div class="k">Last active</div><div class="v">${relTime(p.last_active)}</div></div>
+    </div>`;
+  const field = document.createElement("div");
+  field.className = "field";
+  field.innerHTML = `<div class="k">Config directory</div>`;
+  const path = document.createElement("div");
+  path.className = "path";
+  path.textContent = p.config_dir;
+  path.title = "Open in Finder";
+  path.onclick = () => invoke("reveal_path", { path: p.config_dir });
+  field.appendChild(path);
+  body.appendChild(field);
+
+  const primary = $("#cli-primary");
+  primary.textContent = `Launch ${p.name}`;
+  primary.disabled = false;
+  primary.onclick = () => doCliLaunch(p);
+}
+
+async function doCliLogin() {
+  const p = cliCurrent(); if (!p) return;
+  try { await invoke("login_cli_profile", { name: p.name }); }
+  catch (e) { alert(String(e)); return; }
+  alert(`A Terminal opened for "${p.name}". Complete /login there (choose your account), then come back — the account will show here.`);
+}
+
+async function doCliLaunch(p) {
+  try { await invoke("launch_cli_profile", { name: p.name }); }
+  catch (e) { alert(String(e)); }
+}
+
+function openCliCreate() {
+  $("#cli-new-name").value = "";
+  $("#cli-create-modal").classList.remove("hidden");
+  setTimeout(() => $("#cli-new-name").focus(), 30);
+}
+async function doCliCreate() {
+  const name = $("#cli-new-name").value.trim();
+  if (!name) return;
+  try { await invoke("create_cli_profile", { name }); }
+  catch (e) { alert(String(e)); return; }
+  $("#cli-create-modal").classList.add("hidden");
+  await reloadCli();
+  const made = cliProfiles.find((p) => p.name === name);
+  if (made) { cliSelected = made.slug; renderCliList(); renderCliDetail(); await doCliLogin(); }
+}
+
+function openCliDelete() {
+  const p = cliCurrent(); if (!p) return;
+  $("#cli-del-title").textContent = `Delete “${p.name}”?`;
+  $("#cli-del-modal").classList.remove("hidden");
+}
+async function doCliDelete() {
+  const p = cliCurrent(); if (!p) return;
+  $("#cli-del-modal").classList.add("hidden");
+  try { await invoke("delete_cli_profile", { name: p.name, purge: true }); }
+  catch (e) { alert(String(e)); return; }
+  await reloadCli();
+}
+
+// ---------- Open in IDE + Workspaces ----------
+let ideFolder = null;
+async function openIdeModal() {
+  const p = cliCurrent(); if (!p) return;
+  if (!p.logged_in) { alert("Log in to this account first."); return; }
+  const ides = await invoke("list_ides");
+  if (!ides.length) { alert("No VS Code-family IDE found (VS Code, Cursor, Windsurf, Antigravity)."); return; }
+  const sel = $("#ide-select");
+  sel.innerHTML = ides.map(i => `<option value="${i.id}" data-name="${escapeHtml(i.name)}">${escapeHtml(i.name)}</option>`).join("");
+  $("#ide-account").textContent = p.name;
+  ideFolder = null;
+  $("#ide-folder").textContent = "No folder chosen";
+  $("#ide-status").textContent = "";
+  $("#ide-modal").classList.remove("hidden");
+}
+async function doPickFolder() {
+  const path = await invoke("pick_folder");
+  if (path) { ideFolder = path; $("#ide-folder").textContent = path; }
+}
+async function doOpenIde() {
+  const p = cliCurrent(); if (!p) return;
+  if (!ideFolder) { $("#ide-status").textContent = "Choose a project folder first."; return; }
+  const sel = $("#ide-select"), opt = sel.options[sel.selectedIndex];
+  const ide_id = sel.value, ide_name = opt.dataset.name;
+  $("#ide-status").textContent = "Opening…";
+  try {
+    await invoke("open_in_ide", { account: p.name, ideId: ide_id, projectPath: ideFolder });
+    await invoke("save_workspace", { accountSlug: p.slug, accountName: p.name, ideId: ide_id,
+      ideName: ide_name, projectPath: ideFolder, now: now() });
+  } catch (e) { $("#ide-status").textContent = String(e); return; }
+  $("#ide-modal").classList.add("hidden");
+  await reloadWorkspaces();
+}
+async function reloadWorkspaces() {
+  const list = await invoke("list_workspaces");
+  const ul = $("#ws-list"); ul.innerHTML = "";
+  for (const w of list) {
+    const li = document.createElement("li");
+    li.className = "p-item";
+    const nm = document.createElement("span"); nm.className = "nm";
+    nm.textContent = `${w.account_name} · ${w.ide_name}`;
+    const sub = document.createElement("span"); sub.className = "badge";
+    sub.textContent = w.project_path.split("/").pop() || w.project_path;
+    li.appendChild(nm); li.appendChild(sub);
+    li.title = w.project_path;
+    li.onclick = async () => {
+      try { await invoke("open_workspace", { id: w.id, now: now() }); }
+      catch (e) { alert(String(e)); }
+      await reloadWorkspaces();
+    };
+    const del = document.createElement("button"); del.className = "mini"; del.textContent = "✕";
+    del.onclick = async (e) => {
+      e.stopPropagation();
+      try { await invoke("delete_workspace", { id: w.id }); }
+      catch (e) { alert(String(e)); }
+      await reloadWorkspaces();
+    };
+    li.appendChild(del);
+    ul.appendChild(li);
+  }
+}
 
 // ---------- wire up ----------
 window.addEventListener("DOMContentLoaded", () => {
@@ -334,6 +580,20 @@ window.addEventListener("DOMContentLoaded", () => {
   $("#del-go").onclick = doDelete;
   $("#repair-link").onclick = () => invoke("repair_profiles").then(() => reload());
   $("#feedback").onclick = () => invoke("open_url", { url: "mailto:amory.dev@gmail.com?subject=Personae%20feedback" });
+  document.querySelectorAll(".segmented .seg").forEach((b) => b.onclick = () => setView(b.dataset.view));
+  $("#cli-new-side").onclick = openCliCreate;
+  $("#cli-create-cancel").onclick = closeModals;
+  $("#cli-create-go").onclick = doCliCreate;
+  $("#cli-login").onclick = doCliLogin;
+  // When returning from the Terminal (after `claude auth login`), re-detect login.
+  window.addEventListener("focus", () => { if (view === "cli") reloadCli(); });
+  $("#cli-delete").onclick = openCliDelete;
+  $("#cli-del-cancel").onclick = closeModals;
+  $("#cli-del-go").onclick = doCliDelete;
+  $("#cli-open-ide").onclick = openIdeModal;
+  $("#ide-pick").onclick = doPickFolder;
+  $("#ide-cancel").onclick = () => $("#ide-modal").classList.add("hidden");
+  $("#ide-go").onclick = doOpenIde;
   for (const m of document.querySelectorAll(".modal")) {
     m.addEventListener("click", (e) => { if (e.target === m) closeModals(); });
   }
