@@ -22,6 +22,12 @@ const MOCK_CLI = [
     has_token: true, account_email: "work@corp.com", auth_kind: "subscription", data_size: "12M", created: now() - 86400, last_active: now() - 300 },
 ];
 
+const MOCK_WS = [
+  { id: "cursorwork-cli/Users/you/Projects/demo", account_slug: "work-cli", account_name: "Work CLI",
+    ide_id: "cursor", ide_name: "Cursor", project_path: "/Users/you/Projects/demo", mode: "seamless",
+    created: now()-3600, last_opened: now()-600 },
+];
+
 async function invoke(cmd, args) {
   if (hasTauri) return window.__TAURI__.core.invoke(cmd, args);
   // ---- browser mock ----
@@ -57,6 +63,19 @@ async function invoke(cmd, args) {
     case "capture_cli_token": return null;
     case "launch_cli_profile": console.log("launch cli", args.name); return;
     case "delete_cli_profile": { const i = MOCK_CLI.findIndex(m => m.name === args.name); if (i >= 0) MOCK_CLI.splice(i, 1); return; }
+    case "list_ides": return [
+      { id: "vscode", name: "Visual Studio Code", cli_path: "/usr/local/bin/code" },
+      { id: "cursor", name: "Cursor", cli_path: "/Applications/Cursor.app/…/cursor" },
+    ];
+    case "pick_folder": return "/Users/you/Projects/demo";
+    case "open_in_ide": console.log("open_in_ide", args); return;
+    case "list_workspaces": return structuredClone(MOCK_WS);
+    case "save_workspace": { const id = `${args.ideId}${args.accountSlug}${args.projectPath}`;
+      if (!MOCK_WS.some(w=>w.id===id)) MOCK_WS.push({ id, account_slug: args.accountSlug, account_name: args.accountName,
+        ide_id: args.ideId, ide_name: args.ideName, project_path: args.projectPath, mode: args.mode,
+        created: args.now, last_opened: args.now }); return; }
+    case "delete_workspace": { const i = MOCK_WS.findIndex(w=>w.id===args.id); if(i>=0) MOCK_WS.splice(i,1); return; }
+    case "open_workspace": console.log("open_workspace", args.id); return;
     default: return;
   }
 }
@@ -313,6 +332,7 @@ function closeModals() {
   $("#token-modal")?.classList.add("hidden");
   $("#cli-create-modal")?.classList.add("hidden");
   $("#cli-del-modal")?.classList.add("hidden");
+  $("#ide-modal")?.classList.add("hidden");
   if (typeof stopCapturePolling === "function") stopCapturePolling();
   if (typeof setTokenStatus === "function") setTokenStatus("");
   pendingDelete = null;
@@ -375,6 +395,7 @@ async function reloadCli() {
     if (!cliProfiles.some((p) => p.slug === cliSelected)) cliSelected = cliProfiles[0]?.slug ?? null;
     renderCliList();
     renderCliDetail();
+    await reloadWorkspaces();
   } catch (e) { console.error(e); }
 }
 
@@ -532,6 +553,59 @@ async function doCliDelete() {
   await reloadCli();
 }
 
+// ---------- Open in IDE + Workspaces ----------
+let ideFolder = null;
+async function openIdeModal() {
+  const p = cliCurrent(); if (!p) return;
+  if (!p.has_token) { alert("Set this account's credential first."); return; }
+  const ides = await invoke("list_ides");
+  if (!ides.length) { alert("No VS Code-family IDE found (VS Code, Cursor, Windsurf, Antigravity)."); return; }
+  const sel = $("#ide-select");
+  sel.innerHTML = ides.map(i => `<option value="${i.id}" data-name="${escapeHtml(i.name)}">${escapeHtml(i.name)}</option>`).join("");
+  $("#ide-account").textContent = p.name;
+  ideFolder = null;
+  $("#ide-folder").textContent = "No folder chosen";
+  $("#ide-status").textContent = "";
+  $("#ide-modal").classList.remove("hidden");
+}
+async function doPickFolder() {
+  const path = await invoke("pick_folder");
+  if (path) { ideFolder = path; $("#ide-folder").textContent = path; }
+}
+async function doOpenIde() {
+  const p = cliCurrent(); if (!p) return;
+  if (!ideFolder) { $("#ide-status").textContent = "Choose a project folder first."; return; }
+  const sel = $("#ide-select"), opt = sel.options[sel.selectedIndex];
+  const ide_id = sel.value, ide_name = opt.dataset.name, mode = $("#ide-mode").value;
+  $("#ide-status").textContent = "Opening…";
+  try {
+    await invoke("open_in_ide", { account: p.name, ideId: ide_id, projectPath: ideFolder, mode });
+    await invoke("save_workspace", { accountSlug: p.slug, accountName: p.name, ideId: ide_id,
+      ideName: ide_name, projectPath: ideFolder, mode, now: now() });
+  } catch (e) { $("#ide-status").textContent = String(e); return; }
+  $("#ide-modal").classList.add("hidden");
+  await reloadWorkspaces();
+}
+async function reloadWorkspaces() {
+  const list = await invoke("list_workspaces");
+  const ul = $("#ws-list"); ul.innerHTML = "";
+  for (const w of list) {
+    const li = document.createElement("li");
+    li.className = "p-item";
+    const nm = document.createElement("span"); nm.className = "nm";
+    nm.textContent = `${w.account_name} · ${w.ide_name}`;
+    const sub = document.createElement("span"); sub.className = "badge";
+    sub.textContent = w.project_path.split("/").pop() || w.project_path;
+    li.appendChild(nm); li.appendChild(sub);
+    li.title = `${w.project_path} (${w.mode})`;
+    li.onclick = () => invoke("open_workspace", { id: w.id, now: now() });
+    const del = document.createElement("button"); del.className = "mini"; del.textContent = "✕";
+    del.onclick = async (e) => { e.stopPropagation(); await invoke("delete_workspace", { id: w.id }); await reloadWorkspaces(); };
+    li.appendChild(del);
+    ul.appendChild(li);
+  }
+}
+
 // ---------- wire up ----------
 window.addEventListener("DOMContentLoaded", () => {
   $("#search").addEventListener("input", (e) => { query = e.target.value; renderList(); });
@@ -562,6 +636,10 @@ window.addEventListener("DOMContentLoaded", () => {
   $("#token-console").onclick = () => invoke("open_url", { url: "https://console.anthropic.com/settings/keys" });
   $("#token-cancel").onclick = closeTokenModal;
   $("#token-save").onclick = doTokenSave;
+  $("#cli-open-ide").onclick = openIdeModal;
+  $("#ide-pick").onclick = doPickFolder;
+  $("#ide-cancel").onclick = () => $("#ide-modal").classList.add("hidden");
+  $("#ide-go").onclick = doOpenIde;
   // #token-modal already gets outside-click-to-close from the generic ".modal" loop below.
   for (const m of document.querySelectorAll(".modal")) {
     m.addEventListener("click", (e) => { if (e.target === m) closeModals(); });
