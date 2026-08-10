@@ -573,7 +573,7 @@ function renderCliDetail() {
   if (!cliAvailable) {
     body.innerHTML = `<div class="empty cli-empty"><div class="empty-mark">&gt;_</div>
       <div class="big">Claude Code is required</div>
-      <div class="small">Install the <code>claude</code> CLI to create isolated accounts. macOS is supported for now.</div></div>`;
+      <div class="small">Install the <code>claude</code> CLI to create isolated accounts, then reopen Personae.</div></div>`;
     return;
   }
   const p = cliCurrent();
