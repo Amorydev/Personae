@@ -161,9 +161,6 @@ pub fn pick_folder() -> Result<Option<String>, String> {
 /// terminal: writes `.vscode/settings.json` (CLAUDE_CONFIG_DIR for manually
 /// opened terminals) and `.vscode/tasks.json` (a folderOpen task that auto-opens
 /// a Claude terminal on this account), then launches the IDE at the folder.
-/// `_mode` is accepted for command/signature compatibility with callers
-/// (workspaces store a `mode`) but no longer changes behavior — there is only
-/// one mode now.
 #[cfg(target_os = "macos")]
 pub fn open_in_ide(account: &str, ide_id: &str, project_path: &str) -> Result<(), String> {
     use crate::platform::slugify;
