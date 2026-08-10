@@ -1,5 +1,5 @@
 // Claude Code CLI profile engine. Parallels macos.rs (Desktop), but isolates the
-// *CLI*: an per-profile CLAUDE_CONFIG_DIR plus a per-profile OAuth token injected
+// *CLI*: a per-profile CLAUDE_CONFIG_DIR plus a per-profile OAuth token injected
 // via CLAUDE_CODE_OAUTH_TOKEN (which overrides the shared macOS Keychain slot).
 use serde::Serialize;
 
@@ -32,6 +32,7 @@ pub fn sh_dq_escape(s: &str) -> String {
 
 /// The bash body of a profile launcher. Reads the token from the Keychain at run
 /// time (never bakes it into the file) and execs the real claude CLI.
+/// Precondition: `slug` must be pre-slugified ([a-z0-9-], via platform::slugify) — it is interpolated raw into the Keychain service/account strings.
 pub fn render_launcher(name: &str, slug: &str, config_dir: &str, claude_bin: &str) -> String {
     let name_e = sh_dq_escape(name);
     let cfg_e = sh_dq_escape(config_dir);
@@ -99,6 +100,15 @@ mod tests {
     fn launcher_escapes_quotes_in_name() {
         let s = render_launcher("Ac\"me", "acme", "/tmp/x", "/bin/claude");
         assert!(s.contains("Ac\\\"me"));
+    }
+
+    #[test]
+    fn escapes_shell_metacharacters() {
+        // The point of the escaper: neutralize $, backtick, ", \ inside a double-quoted bash string.
+        assert_eq!(sh_dq_escape("a\"b"), "a\\\"b");
+        assert_eq!(sh_dq_escape("a\\b"), "a\\\\b");
+        assert_eq!(sh_dq_escape("$(whoami)"), "\\$(whoami)");
+        assert_eq!(sh_dq_escape("`id`"), "\\`id\\`");
     }
 
     #[test]
