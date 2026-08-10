@@ -4,6 +4,7 @@ mod macos;
 #[cfg(windows)]
 mod windows;
 mod cli;
+mod ide;
 
 use platform::{active, Platform, Profile};
 
