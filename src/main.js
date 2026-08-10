@@ -16,6 +16,12 @@ const MOCK = [
     created: now() - 86400 * 9, last_active: now() - 4200 },
 ];
 
+const MOCK_CLI = [
+  { name: "Work CLI", slug: "work-cli", config_dir: "/Users/you/Library/Application Support/ClaudeProfilesCLI/work-cli",
+    launcher_path: "/Users/you/Applications/Claude Profiles CLI/Work CLI.command",
+    has_token: true, account_email: "work@corp.com", data_size: "12M", created: now() - 86400, last_active: now() - 300 },
+];
+
 async function invoke(cmd, args) {
   if (hasTauri) return window.__TAURI__.core.invoke(cmd, args);
   // ---- browser mock ----
@@ -37,6 +43,19 @@ async function invoke(cmd, args) {
     case "repair_profiles": return MOCK.length;
     case "reveal_path": console.log("reveal", args.path); return;
     case "open_url": console.log("open", args.url); return;
+    case "cli_available": return true;
+    case "list_cli_profiles": return structuredClone(MOCK_CLI);
+    case "create_cli_profile": {
+      const slug = args.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+      MOCK_CLI.push({ name: args.name, slug, config_dir: `/Users/you/Library/Application Support/ClaudeProfilesCLI/${slug}`,
+        launcher_path: `/Users/you/Applications/Claude Profiles CLI/${args.name}.command`,
+        has_token: false, account_email: null, data_size: "0B", created: now(), last_active: now() });
+      return;
+    }
+    case "set_cli_token": { const p = MOCK_CLI.find(m => m.name === args.name); if (p) { p.has_token = true; p.account_email = "you@example.com"; } return; }
+    case "open_cli_setup_token": console.log("setup-token", args.name); return;
+    case "launch_cli_profile": console.log("launch cli", args.name); return;
+    case "delete_cli_profile": { const i = MOCK_CLI.findIndex(m => m.name === args.name); if (i >= 0) MOCK_CLI.splice(i, 1); return; }
     default: return;
   }
 }
@@ -102,6 +121,11 @@ let profiles = [];
 let selected = null; // slug
 let query = "";
 let claudeFound = true;
+
+let view = "desktop";        // "desktop" | "cli"
+let cliProfiles = [];
+let cliSelected = null;      // slug
+let cliAvailable = true;
 
 function filtered() {
   const q = query.trim().toLowerCase();
