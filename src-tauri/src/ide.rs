@@ -75,6 +75,110 @@ pub fn merge_vscode_settings(existing: &str, bin_dir: &str, config_dir: &str) ->
     serde_json::to_string_pretty(&root).map_err(|e| e.to_string())
 }
 
+#[cfg(target_os = "macos")]
+mod imp {
+    use super::*;
+    use crate::platform::{home, run};
+    use std::fs;
+    use std::os::unix::fs::PermissionsExt;
+    use std::path::PathBuf;
+
+    // Reuse the CLI account's config-dir root (per-slug dirs live here).
+    pub fn cli_config_dir(slug: &str) -> PathBuf {
+        home().join("Library/Application Support/ClaudeProfilesCLI").join(slug)
+    }
+    // Per-profile private bin dir holding the `claude` shim (prepended to workspace PATH).
+    pub fn profile_bin_dir(slug: &str) -> PathBuf { cli_config_dir(slug).join("bin") }
+    // Global dir for `claude-<slug>` wrappers (wrapper mode). Put on PATH by the user.
+    pub fn wrapper_dir() -> PathBuf { home().join(".local/bin") }
+    pub fn workspaces_file() -> PathBuf {
+        home().join("Library/Application Support/ClaudeProfilesCLI/workspaces.json")
+    }
+
+    /// Absolute path to the real claude binary (mirrors cli.rs claude_bin()).
+    pub fn real_claude() -> Option<PathBuf> {
+        if let Ok(p) = std::env::var("CLAUDE_CLI_BIN") {
+            let pb = PathBuf::from(p); if pb.is_file() { return Some(pb); }
+        }
+        let (ok, out) = run("which", &["claude"]);
+        if ok { let p = PathBuf::from(out.trim()); if p.is_file() { return Some(p); } }
+        for c in ["/opt/homebrew/bin/claude", "/usr/local/bin/claude",
+                  "~/.local/bin/claude", "~/.claude/local/claude", "~/.bun/bin/claude"] {
+            let pb = if let Some(r) = c.strip_prefix("~/") { home().join(r) } else { PathBuf::from(c) };
+            if pb.is_file() { return Some(pb); }
+        }
+        None
+    }
+
+    /// Candidate VS Code-family IDEs: (id, display, [bundle-relative CLI paths to probe]).
+    fn candidates() -> Vec<(&'static str, &'static str, Vec<PathBuf>)> {
+        let apps = |rel: &str| vec![
+            PathBuf::from("/Applications").join(rel),
+            home().join("Applications").join(rel),
+        ];
+        let mut out = vec![];
+        out.push(("vscode", "Visual Studio Code",
+            apps("Visual Studio Code.app/Contents/Resources/app/bin/code")));
+        out.push(("cursor", "Cursor",
+            apps("Cursor.app/Contents/Resources/app/bin/cursor")));
+        out.push(("windsurf", "Windsurf", {
+            let mut v = apps("Windsurf.app/Contents/Resources/app/bin/windsurf");
+            v.push(home().join(".codeium/windsurf/bin/windsurf"));
+            v
+        }));
+        out.push(("antigravity", "Antigravity IDE",
+            apps("Antigravity IDE.app/Contents/Resources/app/bin/antigravity-ide")));
+        out
+    }
+
+    pub fn detect_ides() -> Vec<Ide> {
+        let mut ides = vec![];
+        for (id, name, paths) in candidates() {
+            if let Some(p) = paths.into_iter().find(|p| p.is_file()) {
+                ides.push(Ide { id: id.into(), name: name.into(), cli_path: p.display().to_string() });
+            }
+        }
+        ides
+    }
+
+    pub fn ide_cli(ide_id: &str) -> Option<String> {
+        detect_ides().into_iter().find(|i| i.id == ide_id).map(|i| i.cli_path)
+    }
+
+    fn write_exec(path: &PathBuf, body: &str) -> Result<(), String> {
+        if let Some(dir) = path.parent() { fs::create_dir_all(dir).map_err(|e| e.to_string())?; }
+        fs::write(path, body).map_err(|e| e.to_string())?;
+        let mut perm = fs::metadata(path).map_err(|e| e.to_string())?.permissions();
+        perm.set_mode(0o755);
+        fs::set_permissions(path, perm).map_err(|e| e.to_string())
+    }
+
+    /// Install/refresh the per-profile `claude` shim and the global `claude-<slug>`
+    /// wrapper (both share the shim body). Returns the profile bin dir.
+    pub fn install_shims(slug: &str) -> Result<PathBuf, String> {
+        let cfg = cli_config_dir(slug);
+        let real = real_claude().ok_or("Claude Code CLI not found (install `claude`).")?;
+        let body = render_shim(slug, &cfg.display().to_string(), &real.display().to_string());
+        let bin = profile_bin_dir(slug);
+        write_exec(&bin.join("claude"), &body)?;                       // seamless: on prepended PATH
+        write_exec(&wrapper_dir().join(format!("claude-{slug}")), &body)?; // wrapper: global name
+        Ok(bin)
+    }
+
+    pub fn load_workspaces() -> Vec<Workspace> {
+        match fs::read_to_string(workspaces_file()) {
+            Ok(s) => serde_json::from_str(&s).unwrap_or_default(),
+            Err(_) => vec![],
+        }
+    }
+    pub fn save_workspaces(list: &[Workspace]) -> Result<(), String> {
+        let f = workspaces_file();
+        if let Some(d) = f.parent() { fs::create_dir_all(d).map_err(|e| e.to_string())?; }
+        let s = serde_json::to_string_pretty(list).map_err(|e| e.to_string())?;
+        fs::write(&f, s).map_err(|e| e.to_string())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
