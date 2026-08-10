@@ -167,7 +167,7 @@ function renderDetail() {
     return;
   }
   bar.classList.remove("hidden");
-  $(".detail").style.setProperty("--accent", p.tint || "#c2714f");
+  $("#app-desktop .detail").style.setProperty("--accent", p.tint || "#c2714f");
 
   body.innerHTML = "";
   const hero = document.createElement("div");
@@ -336,6 +336,7 @@ document.addEventListener("keydown", (e) => {
     if (e.key === "Enter" && !$("#create-modal").classList.contains("hidden")) { e.preventDefault(); doCreate(); }
     return;
   }
+  if (view !== "desktop") return;   // CLI view uses buttons; don't drive the hidden Desktop model
   if (meta && e.key.toLowerCase() === "n") { e.preventDefault(); openCreate(); return; }
   if (meta && e.key.toLowerCase() === "l") { e.preventDefault(); const p = current(); if (p && !p.running) doLaunch(p); return; }
   if (meta && e.key.toLowerCase() === "r") { e.preventDefault(); invoke("repair_profiles").then(() => reload()); return; }
