@@ -83,6 +83,76 @@ pub fn extract_email(json: &str) -> Option<String> {
     if email.contains('@') { Some(email.to_string()) } else { None }
 }
 
+#[cfg(target_os = "macos")]
+mod imp {
+    use super::*;
+    use crate::platform::{home, run, slugify, to_secs};
+    use std::fs;
+    use std::os::unix::fs::PermissionsExt;
+    use std::path::PathBuf;
+
+    // ~/Applications/Claude Profiles CLI/<name>.command
+    pub fn launcher_root() -> PathBuf { home().join("Applications/Claude Profiles CLI") }
+    // ~/Library/Application Support/ClaudeProfilesCLI/<slug>   (== CLAUDE_CONFIG_DIR)
+    pub fn config_root() -> PathBuf { home().join("Library/Application Support/ClaudeProfilesCLI") }
+
+    pub fn launcher_path(name: &str) -> PathBuf { launcher_root().join(format!("{name}.command")) }
+    pub fn config_dir(slug: &str) -> PathBuf { config_root().join(slug) }
+    pub fn keychain_service(slug: &str) -> String { format!("{KEYCHAIN_PREFIX}.{slug}") }
+
+    /// Resolve the claude CLI binary (env override → PATH → common install dirs).
+    pub fn claude_bin() -> Option<PathBuf> {
+        if let Ok(p) = std::env::var("CLAUDE_CLI_BIN") {
+            let pb = PathBuf::from(p);
+            if pb.is_file() { return Some(pb); }
+        }
+        let (ok, out) = run("which", &["claude"]);
+        if ok {
+            let p = PathBuf::from(out.trim());
+            if p.is_file() { return Some(p); }
+        }
+        for c in [
+            "/opt/homebrew/bin/claude", "/usr/local/bin/claude",
+            "~/.local/bin/claude", "~/.claude/local/claude", "~/.bun/bin/claude",
+        ] {
+            let pb = if let Some(rest) = c.strip_prefix("~/") { home().join(rest) } else { PathBuf::from(c) };
+            if pb.is_file() { return Some(pb); }
+        }
+        None
+    }
+
+    pub fn kc_set(slug: &str, token: &str) -> Result<(), String> {
+        let svc = keychain_service(slug);
+        // -U updates in place if the item already exists.
+        let (ok, out) = run("security", &["add-generic-password", "-U", "-s", &svc, "-a", slug, "-w", token]);
+        if ok { Ok(()) } else { Err(format!("Keychain write failed: {}", out.trim())) }
+    }
+
+    pub fn kc_has(slug: &str) -> bool {
+        let svc = keychain_service(slug);
+        run("security", &["find-generic-password", "-s", &svc, "-a", slug]).0
+    }
+
+    pub fn kc_delete(slug: &str) {
+        let svc = keychain_service(slug);
+        let _ = run("security", &["delete-generic-password", "-s", &svc, "-a", slug]);
+    }
+
+    pub fn write_launcher(name: &str, slug: &str) -> Result<(), String> {
+        let cfg = config_dir(slug);
+        let bin = claude_bin().map(|p| p.display().to_string()).unwrap_or_default();
+        let body = render_launcher(name, slug, &cfg.display().to_string(), &bin);
+        let lp = launcher_path(name);
+        fs::create_dir_all(launcher_root()).map_err(|e| e.to_string())?;
+        fs::write(&lp, body).map_err(|e| e.to_string())?;
+        let mut perm = fs::metadata(&lp).map_err(|e| e.to_string())?.permissions();
+        perm.set_mode(0o755);
+        fs::set_permissions(&lp, perm).map_err(|e| e.to_string())
+    }
+
+    pub fn re_exports() {} // marker; real fns used by super below
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
