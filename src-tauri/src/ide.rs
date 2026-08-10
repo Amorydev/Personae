@@ -170,6 +170,24 @@ mod imp_win {
         appdata().join("ClaudeProfilesCLI").join("workspaces.json")
     }
 
+    /// Like `crate::platform::run`, but with CREATE_NO_WINDOW so the IDE-discovery
+    /// `where` probe and the folder-picker `powershell` call don't flash a console
+    /// window. Kept local to ide.rs so the shared `platform::run` stays untouched
+    /// (this branch's `platform.rs` doesn't set CREATE_NO_WINDOW yet).
+    pub fn run_hidden(program: &str, args: &[&str]) -> (bool, String) {
+        use std::os::windows::process::CommandExt;
+        let mut cmd = std::process::Command::new(program);
+        cmd.args(args).creation_flags(0x08000000); // CREATE_NO_WINDOW
+        match cmd.output() {
+            Ok(o) => {
+                let mut s = String::from_utf8_lossy(&o.stdout).to_string();
+                s.push_str(&String::from_utf8_lossy(&o.stderr));
+                (o.status.success(), s)
+            }
+            Err(e) => (false, format!("{e}")),
+        }
+    }
+
     /// Candidate VS Code-family IDEs: (id, display, PATH cli name for `where`,
     /// [absolute launcher paths to probe]). First existing `.cmd`/`.exe` wins.
     fn candidates() -> Vec<(&'static str, &'static str, &'static str, Vec<PathBuf>)> {
@@ -201,7 +219,7 @@ mod imp_win {
         for (id, name, cli, paths) in candidates() {
             // TODO(verify): `where <cli>` resolves the IDE's `.cmd` shim on PATH.
             let mut resolved: Option<String> = None;
-            let (ok, out) = crate::platform::run("where", &[cli]);
+            let (ok, out) = run_hidden("where", &[cli]);
             if ok {
                 for line in out.lines() {
                     let pb = PathBuf::from(line.trim());
@@ -353,7 +371,7 @@ pub fn pick_folder() -> Result<Option<String>, String> {
     let script = "Add-Type -AssemblyName System.Windows.Forms; \
                   $f=New-Object System.Windows.Forms.FolderBrowserDialog; \
                   if($f.ShowDialog() -eq 'OK'){Write-Output $f.SelectedPath}";
-    let (ok, out) = crate::platform::run(
+    let (ok, out) = imp_win::run_hidden(
         "powershell",
         &["-STA", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script],
     );
