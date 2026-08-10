@@ -5,6 +5,62 @@ use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 
+fn nearest_palette_color(r: u8, g: u8, b: u8) -> String {
+    PALETTE.iter()
+        .min_by_key(|hex| {
+            let pr = u8::from_str_radix(&hex[0..2], 16).unwrap_or(0) as i32;
+            let pg = u8::from_str_radix(&hex[2..4], 16).unwrap_or(0) as i32;
+            let pb = u8::from_str_radix(&hex[4..6], 16).unwrap_or(0) as i32;
+            let dr = r as i32 - pr;
+            let dg = g as i32 - pg;
+            let db = b as i32 - pb;
+            dr * dr + dg * dg + db * db
+        })
+        .unwrap_or(&PALETTE[0])
+        .to_string()
+}
+
+/// Recover a legacy profile's palette color from its already-tinted icon.
+/// White glyphs, dark shadows and transparent pixels are ignored; the average
+/// saturated background color is then matched to the nearest Personae swatch.
+fn palette_color_from_png(path: &PathBuf) -> Option<String> {
+    let mut decoder = png::Decoder::new(fs::File::open(path).ok()?);
+    decoder.set_transformations(png::Transformations::normalize_to_color8());
+    let mut reader = decoder.read_info().ok()?;
+    let mut buf = vec![0; reader.output_buffer_size()];
+    let info = reader.next_frame(&mut buf).ok()?;
+    let bytes = &buf[..info.buffer_size()];
+    let mut sums = [0_u64; 3];
+    let mut count = 0_u64;
+
+    let mut include = |r: u8, g: u8, b: u8, a: u8| {
+        let hi = r.max(g).max(b);
+        let lo = r.min(g).min(b);
+        if a >= 96 && hi >= 80 && hi.saturating_sub(lo) >= 32 {
+            sums[0] += r as u64;
+            sums[1] += g as u64;
+            sums[2] += b as u64;
+            count += 1;
+        }
+    };
+
+    match info.color_type {
+        png::ColorType::Rgba => {
+            for px in bytes.chunks_exact(4) { include(px[0], px[1], px[2], px[3]); }
+        }
+        png::ColorType::Rgb => {
+            for px in bytes.chunks_exact(3) { include(px[0], px[1], px[2], 255); }
+        }
+        _ => return None,
+    }
+    if count < 16 { return None; }
+    Some(nearest_palette_color(
+        (sums[0] / count) as u8,
+        (sums[1] / count) as u8,
+        (sums[2] / count) as u8,
+    ))
+}
+
 pub struct Mac;
 
 impl Mac {
@@ -40,6 +96,23 @@ impl Mac {
 
     fn tint_file(&self, slug: &str) -> PathBuf {
         self.data_root().join(slug).join(".claude-profile-tint")
+    }
+
+    fn recover_legacy_tint(&self, app_dir: &PathBuf, slug: &str) -> Option<String> {
+        let icon = app_dir.join("Contents/Resources/icon.icns");
+        if !icon.is_file() { return None; }
+        let tmp = std::env::temp_dir().join(format!("personae-tint-{}-{slug}.png", std::process::id()));
+        let icon_s = icon.display().to_string();
+        let tmp_s = tmp.display().to_string();
+        let (ok, _) = run("sips", &["-s", "format", "png", "-z", "64", "64", &icon_s, "--out", &tmp_s]);
+        if !ok { return None; }
+        let tint = palette_color_from_png(&tmp).map(|hex| format!("#{hex}"));
+        let _ = fs::remove_file(&tmp);
+        if let Some(ref value) = tint {
+            let data_dir = self.data_root().join(slug);
+            if data_dir.is_dir() { let _ = fs::write(self.tint_file(slug), value); }
+        }
+        tint
     }
 
     fn count_apps(&self) -> usize {
@@ -173,7 +246,8 @@ impl Platform for Mac {
                     o.split('\t').next().unwrap_or("—").trim().to_string()
                 } else { "—".into() };
                 let tint = fs::read_to_string(self.tint_file(&slug)).ok()
-                    .map(|s| s.trim().to_string());
+                    .and_then(|s| resolve_color(&s).map(|hex| format!("#{hex}")))
+                    .or_else(|| self.recover_legacy_tint(&p, &slug));
                 let md = fs::metadata(&data_dir).ok();
                 let created = md.as_ref().and_then(|m| m.created().ok()).and_then(to_secs);
                 let last_active = md.as_ref().and_then(|m| m.modified().ok()).and_then(to_secs);
@@ -267,5 +341,20 @@ impl Platform for Mac {
         let _ = fs::write(self.tint_file(&slug), format!("#{hex}"));
         self.lsregister(&app_dir);
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn nearest_palette_recovers_green_icon() {
+        assert_eq!(nearest_palette_color(28, 230, 112), "22C55E");
+    }
+
+    #[test]
+    fn nearest_palette_recovers_pink_icon() {
+        assert_eq!(nearest_palette_color(245, 62, 160), "EC4899");
     }
 }

@@ -152,7 +152,12 @@ pub fn pick_folder() -> Result<Option<String>, String> {
     let (ok, out) = crate::platform::run(
         "osascript", &["-e", "POSIX path of (choose folder with prompt \"Select a project folder\")"]);
     let s = out.trim().to_string();
-    if ok && !s.is_empty() { Ok(Some(s)) }
+    if ok && !s.is_empty() {
+        // `choose folder` returns a trailing slash — strip it so the path, the
+        // workspace id, and the folder-name label are clean (keep "/" for root).
+        let c = s.trim_end_matches('/');
+        Ok(Some(if c.is_empty() { "/".into() } else { c.to_string() }))
+    }
     else if s.contains("User canceled") || s.is_empty() { Ok(None) }
     else { Err(s) }
 }
