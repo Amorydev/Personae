@@ -147,6 +147,7 @@ let view = "desktop";        // "desktop" | "cli"
 let cliProfiles = [];
 let cliSelected = null;      // slug
 let cliAvailable = true;
+let cliWorkspaces = [];      // all saved workspaces (rendered nested under their account)
 
 function filtered() {
   const q = query.trim().toLowerCase();
@@ -389,10 +390,10 @@ async function reloadCli() {
     cliAvailable = await invoke("cli_available");
     $("#cli-new-side").disabled = !cliAvailable;
     cliProfiles = await invoke("list_cli_profiles");
+    cliWorkspaces = await invoke("list_workspaces");
     if (!cliProfiles.some((p) => p.slug === cliSelected)) cliSelected = cliProfiles[0]?.slug ?? null;
     renderCliList();
     renderCliDetail();
-    await reloadWorkspaces();
   } catch (e) { console.error(e); }
 }
 
@@ -414,6 +415,34 @@ function renderCliList() {
     }
     li.onclick = () => { cliSelected = p.slug; renderCliList(); renderCliDetail(); };
     ul.appendChild(li);
+
+    // nested workspaces (projects bound to this account) — one-click reopen
+    for (const w of cliWorkspaces.filter((w) => w.account_slug === p.slug)) {
+      const wli = document.createElement("li");
+      wli.className = "ws-item";
+      const folder = w.project_path.replace(/\/+$/, "").split("/").pop() || w.project_path;
+      const wnm = document.createElement("span"); wnm.className = "nm";
+      wnm.textContent = folder;
+      const badge = document.createElement("span"); badge.className = "badge";
+      badge.textContent = w.ide_name;
+      wli.appendChild(wnm); wli.appendChild(badge);
+      wli.title = `${w.project_path} — open in ${w.ide_name}`;
+      wli.onclick = async () => {
+        try { await invoke("open_workspace", { id: w.id, now: now() }); }
+        catch (e) { alert(String(e)); }
+        await reloadCli();
+      };
+      const del = document.createElement("button"); del.className = "mini"; del.textContent = "✕";
+      del.title = "Remove this workspace";
+      del.onclick = async (e) => {
+        e.stopPropagation();
+        try { await invoke("delete_workspace", { id: w.id }); }
+        catch (e) { alert(String(e)); }
+        await reloadCli();
+      };
+      wli.appendChild(del);
+      ul.appendChild(wli);
+    }
   }
 }
 
@@ -536,43 +565,7 @@ async function doOpenIde() {
       ideName: ide_name, projectPath: ideFolder, now: now() });
   } catch (e) { $("#ide-status").textContent = String(e); return; }
   $("#ide-modal").classList.add("hidden");
-  await reloadWorkspaces();
-}
-async function reloadWorkspaces() {
-  const list = await invoke("list_workspaces");
-  const ul = $("#ws-list"); ul.innerHTML = "";
-  if (!list.length) {
-    const hint = document.createElement("li");
-    hint.className = "ws-empty";
-    hint.textContent = "No saved workspaces yet — use “Open in IDE…” to bind an account to a project.";
-    ul.appendChild(hint);
-    return;
-  }
-  for (const w of list) {
-    const li = document.createElement("li");
-    li.className = "p-item";
-    const nm = document.createElement("span"); nm.className = "nm";
-    const folder = w.project_path.replace(/\/+$/, "").split("/").pop() || w.project_path;
-    nm.textContent = `${folder} · ${w.account_name}`;
-    const sub = document.createElement("span"); sub.className = "badge";
-    sub.textContent = w.ide_name;
-    li.appendChild(nm); li.appendChild(sub);
-    li.title = `${w.project_path} — ${w.account_name} (${w.ide_name})`;
-    li.onclick = async () => {
-      try { await invoke("open_workspace", { id: w.id, now: now() }); }
-      catch (e) { alert(String(e)); }
-      await reloadWorkspaces();
-    };
-    const del = document.createElement("button"); del.className = "mini"; del.textContent = "✕";
-    del.onclick = async (e) => {
-      e.stopPropagation();
-      try { await invoke("delete_workspace", { id: w.id }); }
-      catch (e) { alert(String(e)); }
-      await reloadWorkspaces();
-    };
-    li.appendChild(del);
-    ul.appendChild(li);
-  }
+  await reloadCli(); // refresh accounts + their nested workspaces
 }
 
 // ---------- wire up ----------

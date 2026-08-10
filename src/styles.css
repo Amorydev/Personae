@@ -101,7 +101,18 @@ input, .path { -webkit-user-select: text; user-select: text; }
 .p-item .nm { font-size: 14px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 .side-foot { padding: 10px 12px; border-top: 1px solid var(--border-soft); flex: none; }
-.ws-empty { padding: 6px 14px; font-size: 12px; color: var(--text-dim); line-height: 1.4; list-style: none; }
+/* workspace rows nested under their CLI account */
+.ws-item {
+  display: flex; align-items: center; gap: 8px;
+  margin-left: 18px; padding: 5px 10px 5px 14px;
+  border-left: 1px solid var(--border-soft);
+  font-size: 12px; color: var(--text-dim); cursor: pointer; list-style: none;
+}
+.ws-item:hover { color: var(--text); background: color-mix(in srgb, var(--accent) 8%, transparent); }
+.ws-item .nm { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ws-item .badge { font-size: 10px; opacity: .75; }
+.ws-item .mini { opacity: 0; }
+.ws-item:hover .mini { opacity: 1; }
 .newbtn {
   width: 100%; display: flex; align-items: center; gap: 8px;
   background: transparent; border: 1px solid var(--border);
