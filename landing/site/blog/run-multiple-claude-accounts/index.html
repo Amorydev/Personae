@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How to Run Multiple Claude Accounts at Once (macOS &amp; Windows) — Personae</title>
+<meta name="description" content="Claude Desktop only signs into one account at a time. Here's how to run multiple Claude accounts at once — Work, Personal, and client profiles side by side, fully isolated, on macOS and Windows.">
+<link rel="canonical" href="https://claudemux.com/blog/run-multiple-claude-accounts/">
+<meta name="robots" content="index,follow">
+
+<!-- Open Graph -->
+<meta property="og:type" content="article">
+<meta property="og:title" content="How to Run Multiple Claude Accounts at Once (macOS &amp; Windows)">
+<meta property="og:description" content="Run multiple isolated Claude Desktop accounts at the same time — Work, Personal, and every client, side by side. Free, local, ~3 MB.">
+<meta property="og:url" content="https://claudemux.com/blog/run-multiple-claude-accounts/">
+<meta property="og:image" content="https://claudemux.com/og.png">
+<meta property="og:site_name" content="Personae">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="How to Run Multiple Claude Accounts at Once">
+<meta name="twitter:description" content="Run multiple isolated Claude Desktop accounts at the same time. Free, local, macOS &amp; Windows.">
+<meta name="twitter:image" content="https://claudemux.com/og.png">
+
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+
+<!-- Structured data: Article -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  "headline": "How to Run Multiple Claude Accounts at Once (macOS & Windows)",
+  "description": "Claude Desktop only signs into one account at a time. Here's how to run multiple Claude accounts at once — Work, Personal, and client profiles side by side, fully isolated.",
+  "image": "https://claudemux.com/og.png",
+  "author": { "@type": "Organization", "name": "Personae" },
+  "publisher": {
+    "@type": "Organization",
+    "name": "Personae",
+    "logo": { "@type": "ImageObject", "url": "https://claudemux.com/favicon.svg" }
+  },
+  "datePublished": "2026-08-10",
+  "dateModified": "2026-08-10",
+  "mainEntityOfPage": { "@type": "WebPage", "@id": "https://claudemux.com/blog/run-multiple-claude-accounts/" }
+}
+</script>
+
+<!-- Structured data: FAQ (rich results) -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "Can I run two or more Claude accounts at the same time?",
+      "acceptedAnswer": { "@type": "Answer", "text": "Yes. With Personae there is no instance limit — open as many Claude Desktop accounts as you like, all at once, each in its own window and Dock icon." }
+    },
+    {
+      "@type": "Question",
+      "name": "How do I run multiple Claude accounts on a Mac?",
+      "acceptedAnswer": { "@type": "Answer", "text": "Install Personae, click New profile for each account (Work, Personal, a client), then Launch. Every profile is fully isolated with its own login and history — sign in once and it stays signed in." }
+    },
+    {
+      "@type": "Question",
+      "name": "Does running multiple Claude accounts work on Windows?",
+      "acceptedAnswer": { "@type": "Answer", "text": "Yes. Personae supports macOS 11+ and Windows 10+, with the same isolation on both platforms." }
+    },
+    {
+      "@type": "Question",
+      "name": "Is it private? Can Personae see my Claude logins?",
+      "acceptedAnswer": { "@type": "Answer", "text": "No. There is no account, no server, and no telemetry. Personae only orchestrates the Claude Desktop you already installed; each profile's data stays on your machine, isolated from the others." }
+    }
+  ]
+}
+</script>
+
+<style>
+  :root{
+    --ink:#0b0b0e; --ink-2:#141216; --line:#2a2630;
+    --paper:#ece7e1; --dim:#9d968f; --faint:#6b655f;
+    --terra:#c2714f; --ok:#5bbd8e;
+    --serif: ui-serif, "New York", "Iowan Old Style", Georgia, "Times New Roman", serif;
+    --sans: -apple-system, "SF Pro Text", system-ui, "Segoe UI", Roboto, sans-serif;
+    --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+    --wrap:720px;
+  }
+  *{box-sizing:border-box}
+  html{-webkit-text-size-adjust:100%}
+  body{
+    margin:0; background:var(--ink); color:var(--paper);
+    font-family:var(--sans); font-size:18px; line-height:1.7;
+    -webkit-font-smoothing:antialiased;
+  }
+  a{color:var(--terra); text-decoration:none}
+  a:hover{text-decoration:underline}
+  .wrap{max-width:var(--wrap); margin:0 auto; padding:0 22px}
+  header.site{padding:22px 0; border-bottom:1px solid var(--line)}
+  header.site .wrap{display:flex; align-items:center; justify-content:space-between}
+  .brand{font-weight:700; letter-spacing:.2px; color:var(--paper)}
+  .brand .dot{color:var(--terra)}
+  nav a{color:var(--dim); font-size:15px; margin-left:18px}
+  article{padding:48px 0 24px}
+  .eyebrow{color:var(--terra); font-size:13px; letter-spacing:.14em; text-transform:uppercase; font-weight:600; margin:0 0 14px}
+  h1{font-family:var(--serif); font-weight:600; font-size:clamp(30px,5.4vw,46px); line-height:1.12; letter-spacing:-.01em; margin:0 0 16px}
+  .lead{color:var(--dim); font-size:20px; margin:0 0 8px}
+  .meta{color:var(--faint); font-size:14px; margin:14px 0 0}
+  h2{font-family:var(--serif); font-weight:600; font-size:clamp(23px,3.6vw,30px); margin:44px 0 12px; letter-spacing:-.01em}
+  h3{font-size:20px; margin:30px 0 8px}
+  p{margin:0 0 18px}
+  ul,ol{margin:0 0 18px; padding-left:22px}
+  li{margin:0 0 8px}
+  strong{color:#fff}
+  hr{border:none; border-top:1px solid var(--line); margin:40px 0}
+  blockquote{margin:24px 0; padding:14px 20px; border-left:3px solid var(--terra); background:var(--ink-2); color:var(--paper); border-radius:0 10px 10px 0}
+  .steps{list-style:none; padding:0; counter-reset:s}
+  .steps li{counter-increment:s; position:relative; padding:16px 18px 16px 62px; margin:0 0 12px; background:var(--ink-2); border:1px solid var(--line); border-radius:14px}
+  .steps li::before{content:counter(s); position:absolute; left:16px; top:16px; width:30px; height:30px; border-radius:50%; background:var(--terra); color:#160c07; font-weight:700; display:grid; place-items:center; font-size:15px}
+  .steps li strong{display:block; margin-bottom:2px}
+  kbd{font-family:var(--mono); font-size:13px; background:var(--ink-2); border:1px solid var(--line); border-bottom-width:2px; border-radius:6px; padding:1px 6px; color:var(--paper)}
+  .cta{display:block; margin:40px 0; padding:26px; text-align:center; background:linear-gradient(180deg,#171319,#120f15); border:1px solid var(--line); border-radius:20px}
+  .cta h2{margin:0 0 6px}
+  .cta p{color:var(--dim); margin:0 0 18px}
+  .btn{display:inline-block; background:var(--terra); color:#160c07; font-weight:600; padding:12px 22px; border-radius:12px}
+  .btn:hover{text-decoration:none; filter:brightness(1.06)}
+  .btn.ghost{background:transparent; color:var(--paper); border:1px solid var(--line); margin-left:10px}
+  .faq h3{font-size:18px; margin:22px 0 4px}
+  footer.site{border-top:1px solid var(--line); padding:26px 0; color:var(--faint); font-size:14px; margin-top:24px}
+  footer.site a{color:var(--dim)}
+</style>
+</head>
+<body>
+
+<header class="site">
+  <div class="wrap">
+    <a class="brand" href="/">Personae<span class="dot">.</span></a>
+    <nav>
+      <a href="/">Home</a>
+      <a href="/#features">Features</a>
+      <a href="/dl/latest/Personae-macOS.dmg">Download</a>
+    </nav>
+  </div>
+</header>
+
+<article>
+  <div class="wrap">
+    <p class="eyebrow">Guide</p>
+    <h1>How to run multiple Claude accounts at once</h1>
+    <p class="lead">Claude Desktop only lets you sign into one account at a time. Here's how to keep Work, Personal, and every client account signed in side by side — fully isolated, on macOS and Windows.</p>
+    <p class="meta">Updated August 2026 · ~4 min read</p>
+
+    <hr>
+
+    <h2>The problem: one account at a time</h2>
+    <p>If you use Claude for more than one thing — a day job, personal projects, a couple of clients — you've hit the wall. <strong>Claude Desktop signs you into a single account and enforces a single running instance.</strong> Switching means logging out of one account and back into another, over and over, losing your place each time.</p>
+    <p>People try all sorts of workarounds: separate browser profiles, a second machine, macOS user accounts, or juggling the web app in incognito windows. They all work a little, and all of them are friction you feel every single day.</p>
+
+    <h2>The clean fix: isolated profiles that run together</h2>
+    <p><a href="/">Personae</a> is a small, free app that runs <strong>multiple Claude Desktop accounts at the same time</strong> — each in its own window and Dock icon, each with its own colour, all signed in at once. No more logging out to switch.</p>
+    <p>The key idea is <strong>true isolation</strong>. Every profile gets its own data directory — a separate login, chat history, cookies, and even MCP settings. Nothing from one account is ever visible to another. And because there's no single-instance lock, you can have Work and Personal open simultaneously.</p>
+
+    <blockquote>Personae doesn't repackage Claude — it orchestrates the copy of Claude Desktop you already have installed. That's why it keeps working after every Claude auto-update.</blockquote>
+
+    <h2>Set it up in under a minute</h2>
+    <ol class="steps">
+      <li><strong>Name a profile</strong> "Work", "Personal", a client — whatever you juggle. Pick a colour, or let Personae choose one.</li>
+      <li><strong>It carves out a space</strong> Personae creates an isolated data directory and a tinted app icon, then registers it with your system so it shows up in Spotlight and the Dock.</li>
+      <li><strong>Launch &amp; sign in once</strong> Open it, sign in, and it stays signed in — in its own window, forever. Repeat for as many accounts as you need.</li>
+    </ol>
+    <p>It's built for the keyboard, too: <kbd>⌘N</kbd> for a new profile, <kbd>⌘L</kbd> to launch, <kbd>⏎</kbd> to open, <kbd>⌫</kbd> to remove.</p>
+
+    <h2>Why not just use browser profiles?</h2>
+    <p>You can run the Claude web app in separate browser profiles, and for light use that's fine. But you lose the native Claude Desktop experience — global shortcuts, the menu-bar presence, MCP integrations, and desktop notifications. Personae gives you <strong>the real desktop app, multiplied</strong>, with each account isolated at the data-directory level rather than relying on a browser's cookie jar.</p>
+
+    <h2>Is it private?</h2>
+    <p>Yes. There's <strong>no account to create, no server, and no telemetry.</strong> Personae only orchestrates the Claude Desktop already on your machine; every profile's data stays local and isolated. It's a native app of a few megabytes (built on Tauri, not another bundled Chromium), so it's light and stays out of your way.</p>
+
+    <div class="cta">
+      <h2>Run every Claude account at once</h2>
+      <p>Free · local · ~3 MB · macOS 11+ and Windows 10+</p>
+      <a class="btn" href="/dl/latest/Personae-macOS.dmg">Download for macOS</a>
+      <a class="btn ghost" href="/dl/latest/Personae-Windows-setup.exe">Windows</a>
+    </div>
+
+    <h2 class="faq">FAQ</h2>
+    <div class="faq">
+      <h3>Can I run two (or more) Claude accounts at the same time?</h3>
+      <p>Yes. Personae has no instance limit — open as many Claude Desktop accounts as you like, all at once, each in its own window and Dock icon.</p>
+
+      <h3>How do I run multiple Claude accounts on a Mac?</h3>
+      <p>Install Personae, click <strong>New profile</strong> for each account (Work, Personal, a client…), then <strong>Launch</strong>. Every profile is fully isolated with its own login and history — sign in once and it stays signed in.</p>
+
+      <h3>Does it work on Windows?</h3>
+      <p>Yes — macOS 11+ and Windows 10+. The same isolation works on both platforms.</p>
+
+      <h3>Will it break when Claude updates?</h3>
+      <p>No. Personae wraps your installed Claude rather than repackaging it, so it keeps working after Claude's auto-updates.</p>
+    </div>
+  </div>
+</article>
+
+<footer class="site">
+  <div class="wrap">
+    Personae — run every Claude account at once. <a href="/">claudemux.com</a>
+  </div>
+</footer>
+
+</body>
+</html>
