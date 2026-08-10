@@ -80,10 +80,15 @@ jobs:
           BASE=$(basename "$SRC")
           PORT="${VPS_PORT:-22}"
 
-          # Ghi private key ra file tạm
+          # Ghi private key ra file tạm (khử CRLF — nguyên nhân phổ biến của
+          # "invalid format"), rồi kiểm tra key hợp lệ trước khi dùng.
           KEY="$RUNNER_TEMP/deploy_key"
-          printf '%s\n' "$VPS_SSH_KEY" > "$KEY"
+          printf '%s\n' "$VPS_SSH_KEY" | tr -d '\r' > "$KEY"
           chmod 600 "$KEY"
+          if ! ssh-keygen -y -f "$KEY" >/dev/null 2>&1; then
+            echo "::error::VPS_SSH_KEY không phải OpenSSH private key hợp lệ. Dán TRỌN private key (từ '-----BEGIN OPENSSH PRIVATE KEY-----' đến '-----END OPENSSH PRIVATE KEY-----'), KHÔNG phải file .pub."
+            exit 1
+          fi
           SSH_OPTS="-i $KEY -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
 
           echo "Uploading $SRC -> $VPS_USER@$VPS_HOST:$VPS_PATH/{$VERSION/$BASE, latest/$STABLE_NAME}"
