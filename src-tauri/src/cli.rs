@@ -210,11 +210,6 @@ pub fn launch(name: &str) -> Result<(), String> {
 }
 
 #[cfg(target_os = "macos")]
-pub fn has_token(name: &str) -> bool {
-    imp::kc_has(&crate::platform::slugify(name))
-}
-
-#[cfg(target_os = "macos")]
 pub fn list() -> Vec<CliProfile> {
     use crate::platform::{run, slugify, to_secs};
     let mut out = vec![];
@@ -279,8 +274,6 @@ pub fn open_setup_token(_name: &str) -> Result<(), String> { Err(NOT_YET.into())
 pub fn launch(_name: &str) -> Result<(), String> { Err(NOT_YET.into()) }
 #[cfg(not(target_os = "macos"))]
 pub fn delete(_name: &str, _purge: bool) -> Result<(), String> { Err(NOT_YET.into()) }
-#[cfg(not(target_os = "macos"))]
-pub fn has_token(_name: &str) -> bool { false }
 
 #[cfg(test)]
 mod tests {
