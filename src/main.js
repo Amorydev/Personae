@@ -415,34 +415,6 @@ function renderCliList() {
     }
     li.onclick = () => { cliSelected = p.slug; renderCliList(); renderCliDetail(); };
     ul.appendChild(li);
-
-    // nested workspaces (projects bound to this account) — one-click reopen
-    for (const w of cliWorkspaces.filter((w) => w.account_slug === p.slug)) {
-      const wli = document.createElement("li");
-      wli.className = "ws-item";
-      const folder = w.project_path.replace(/\/+$/, "").split("/").pop() || w.project_path;
-      const wnm = document.createElement("span"); wnm.className = "nm";
-      wnm.textContent = folder;
-      const badge = document.createElement("span"); badge.className = "badge";
-      badge.textContent = w.ide_name;
-      wli.appendChild(wnm); wli.appendChild(badge);
-      wli.title = `${w.project_path} — open in ${w.ide_name}`;
-      wli.onclick = async () => {
-        try { await invoke("open_workspace", { id: w.id, now: now() }); }
-        catch (e) { alert(String(e)); }
-        await reloadCli();
-      };
-      const del = document.createElement("button"); del.className = "mini"; del.textContent = "✕";
-      del.title = "Remove this workspace";
-      del.onclick = async (e) => {
-        e.stopPropagation();
-        try { await invoke("delete_workspace", { id: w.id }); }
-        catch (e) { alert(String(e)); }
-        await reloadCli();
-      };
-      wli.appendChild(del);
-      ul.appendChild(wli);
-    }
   }
 }
 
@@ -486,6 +458,46 @@ function renderCliDetail() {
   path.onclick = () => invoke("reveal_path", { path: p.config_dir });
   field.appendChild(path);
   body.appendChild(field);
+
+  // Workspaces bound to this account (one-click reopen; ✕ to remove).
+  const wsField = document.createElement("div");
+  wsField.className = "field";
+  wsField.innerHTML = `<div class="k">Workspaces</div>`;
+  const wss = cliWorkspaces.filter((w) => w.account_slug === p.slug);
+  if (!wss.length) {
+    const empty = document.createElement("div");
+    empty.className = "ws-empty";
+    empty.textContent = "None yet — use “Open in IDE…” to bind this account to a project.";
+    wsField.appendChild(empty);
+  } else {
+    for (const w of wss) {
+      const row = document.createElement("div");
+      row.className = "ws-row";
+      const folder = w.project_path.replace(/\/+$/, "").split("/").pop() || w.project_path;
+      const label = document.createElement("span"); label.className = "ws-label";
+      label.textContent = folder;
+      const badge = document.createElement("span"); badge.className = "badge";
+      badge.textContent = w.ide_name;
+      const spacer = document.createElement("div"); spacer.className = "ws-spacer";
+      const del = document.createElement("button"); del.className = "mini"; del.textContent = "✕";
+      del.title = "Remove this workspace";
+      del.onclick = async (e) => {
+        e.stopPropagation();
+        try { await invoke("delete_workspace", { id: w.id }); }
+        catch (e) { alert(String(e)); }
+        await reloadCli();
+      };
+      row.append(label, badge, spacer, del);
+      row.title = `${w.project_path} — open in ${w.ide_name}`;
+      row.onclick = async () => {
+        try { await invoke("open_workspace", { id: w.id, now: now() }); }
+        catch (e) { alert(String(e)); }
+        await reloadCli();
+      };
+      wsField.appendChild(row);
+    }
+  }
+  body.appendChild(wsField);
 
   const primary = $("#cli-primary");
   primary.textContent = `Launch ${p.name}`;
