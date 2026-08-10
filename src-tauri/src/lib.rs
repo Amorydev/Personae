@@ -3,6 +3,7 @@ mod platform;
 mod macos;
 #[cfg(windows)]
 mod windows;
+mod cli;
 
 use platform::{active, Platform, Profile};
 
