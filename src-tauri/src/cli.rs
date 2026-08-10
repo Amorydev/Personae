@@ -86,7 +86,7 @@ pub fn extract_email(json: &str) -> Option<String> {
 #[cfg(target_os = "macos")]
 mod imp {
     use super::*;
-    use crate::platform::{home, run, slugify, to_secs};
+    use crate::platform::{home, run};
     use std::fs;
     use std::os::unix::fs::PermissionsExt;
     use std::path::PathBuf;
