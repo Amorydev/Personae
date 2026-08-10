@@ -598,9 +598,18 @@ async function reloadWorkspaces() {
     sub.textContent = w.project_path.split("/").pop() || w.project_path;
     li.appendChild(nm); li.appendChild(sub);
     li.title = `${w.project_path} (${w.mode})`;
-    li.onclick = async () => { await invoke("open_workspace", { id: w.id, now: now() }); await reloadWorkspaces(); };
+    li.onclick = async () => {
+      try { await invoke("open_workspace", { id: w.id, now: now() }); }
+      catch (e) { alert(String(e)); }
+      await reloadWorkspaces();
+    };
     const del = document.createElement("button"); del.className = "mini"; del.textContent = "✕";
-    del.onclick = async (e) => { e.stopPropagation(); await invoke("delete_workspace", { id: w.id }); await reloadWorkspaces(); };
+    del.onclick = async (e) => {
+      e.stopPropagation();
+      try { await invoke("delete_workspace", { id: w.id }); }
+      catch (e) { alert(String(e)); }
+      await reloadWorkspaces();
+    };
     li.appendChild(del);
     ul.appendChild(li);
   }
