@@ -2,6 +2,8 @@
 use serde::Serialize;
 use std::path::PathBuf;
 use std::process::Command;
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
 
 pub const BUNDLE_PREFIX: &str = "com.claudeprofiles";
 pub const PALETTE: [&str; 11] = [
@@ -35,6 +37,7 @@ pub trait Platform {
 
 // --- shared helpers -------------------------------------------------------
 
+#[allow(dead_code)]
 pub fn home() -> PathBuf {
     PathBuf::from(std::env::var("HOME").unwrap_or_else(|_| ".".into()))
 }
@@ -87,7 +90,11 @@ pub fn to_secs(t: std::time::SystemTime) -> Option<u64> {
 
 /// Run a command, returning (success, combined stdout+stderr).
 pub fn run(program: &str, args: &[&str]) -> (bool, String) {
-    match Command::new(program).args(args).output() {
+    let mut cmd = Command::new(program);
+    cmd.args(args);
+    #[cfg(windows)]
+    cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+    match cmd.output() {
         Ok(o) => {
             let mut s = String::from_utf8_lossy(&o.stdout).to_string();
             s.push_str(&String::from_utf8_lossy(&o.stderr));
