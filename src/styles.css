@@ -246,3 +246,26 @@ kbd {
 .primary kbd { background: rgba(0,0,0,.24); border-color: rgba(0,0,0,.28); color: rgba(255,255,255,.92); }
 
 .hidden { display: none !important; }
+
+/* ---------- segmented view toggle (Desktop / CLI) ---------- */
+.segmented { display: inline-flex; border: 1px solid var(--border); border-radius: 9px; overflow: hidden; background: #16161b; flex: none; }
+.segmented .seg { padding: 7px 14px; background: transparent; border: 0; color: var(--text-dim); font: inherit; font-size: 13px; cursor: pointer; }
+.segmented .seg:hover { color: var(--text); }
+.segmented .seg.sel { background: var(--accent); color: #fff; font-weight: 600; }
+
+/* ---------- CLI list badge ---------- */
+.p-item .badge { margin-left: auto; flex: none; font-size: 10px; letter-spacing: .03em; text-transform: uppercase;
+  font-weight: 700; padding: 2px 6px; border-radius: 999px; }
+.badge.warn { color: var(--warn); background: color-mix(in srgb, var(--warn) 16%, transparent);
+  border: 1px solid color-mix(in srgb, var(--warn) 40%, transparent); }
+
+/* ---------- modal hint text + textarea (set-token modal) ---------- */
+.modal-card .hint { font-size: 13px; color: var(--text-dim); line-height: 1.5; margin: 0; }
+.modal-card .hint code { background: #1a1a20; padding: 1px 5px; border-radius: 4px; font-family: var(--mono); font-size: 12px; }
+.modal-card textarea {
+  all: unset; background: #0e0e12; border: 1px solid var(--border); border-radius: var(--r);
+  padding: 10px 12px; color: var(--text); font-size: 13px; font-family: var(--mono);
+  resize: vertical; box-sizing: border-box; white-space: pre-wrap;
+}
+.modal-card textarea:focus { border-color: color-mix(in srgb, var(--accent) 60%, var(--border)); }
+.primary:disabled { opacity: .5; cursor: not-allowed; filter: none; }

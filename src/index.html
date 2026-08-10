@@ -8,7 +8,7 @@
     <script type="module" src="/main.js" defer></script>
   </head>
   <body>
-    <div class="app">
+    <div class="app" id="app-desktop">
       <!-- ================= sidebar ================= -->
       <aside class="sidebar">
         <div class="side-head" data-tauri-drag-region></div>
@@ -29,6 +29,10 @@
       <main class="detail">
         <div class="detail-head" data-tauri-drag-region>
           <div class="spacer" data-tauri-drag-region></div>
+          <div class="segmented">
+            <button class="seg sel" data-view="desktop">Desktop</button>
+            <button class="seg" data-view="cli">CLI</button>
+          </div>
           <button id="new-top" class="newtop"><span class="plus">+</span> New profile <kbd>⌘</kbd><kbd>N</kbd></button>
         </div>
 
@@ -52,6 +56,37 @@
           <span class="link" id="repair-link" title="Rewrite launchers to force native arch">Repair</span>
           <span class="ver">v0.1.0</span>
           <span class="link" id="feedback">💬 Send feedback</span>
+        </div>
+      </main>
+    </div>
+
+    <!-- ================= CLI view ================= -->
+    <div class="app hidden" id="cli-view">
+      <aside class="sidebar">
+        <div class="side-head" data-tauri-drag-region></div>
+        <div class="section">CLI accounts</div>
+        <ul id="cli-list" class="profiles"></ul>
+        <div class="side-foot">
+          <button id="cli-new-side" class="newbtn"><span class="plus">+</span> New CLI account</button>
+        </div>
+      </aside>
+
+      <main class="detail cli-detail">
+        <div class="detail-head" data-tauri-drag-region>
+          <div class="spacer" data-tauri-drag-region></div>
+          <div class="segmented">
+            <button class="seg sel" data-view="desktop">Desktop</button>
+            <button class="seg" data-view="cli">CLI</button>
+          </div>
+        </div>
+
+        <div id="cli-detail-body" class="detail-body"><!-- filled by JS --></div>
+
+        <div id="cli-actionbar" class="actionbar hidden">
+          <button id="cli-primary" class="primary"></button>
+          <button id="cli-settoken" class="btn">Set token</button>
+          <div class="spacer"></div>
+          <button id="cli-delete" class="danger">Delete</button>
         </div>
       </main>
     </div>
@@ -91,6 +126,21 @@
         <div class="modal-actions">
           <button id="del-cancel" class="btn">Cancel</button>
           <button id="del-go" class="danger">Delete profile</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ================= set token modal ================= -->
+    <div id="token-modal" class="modal hidden">
+      <div class="modal-card">
+        <div class="modal-title">Set token</div>
+        <p class="hint">Run <code>claude setup-token</code>, log in to the account you want for this
+          profile, then paste the printed token (starts with <code>sk-ant-</code>) below.</p>
+        <button id="token-open" class="btn">Open setup-token in Terminal…</button>
+        <textarea id="token-input" rows="4" placeholder="Paste the token or the whole setup-token output"></textarea>
+        <div class="modal-actions">
+          <button id="token-cancel" class="btn">Cancel</button>
+          <button id="token-save" class="primary">Save token</button>
         </div>
       </div>
     </div>
