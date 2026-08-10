@@ -179,6 +179,110 @@ mod imp {
     }
 }
 
+// ---- public API (macOS) --------------------------------------------------
+#[cfg(target_os = "macos")]
+pub fn list_ides() -> Vec<Ide> { imp::detect_ides() }
+
+/// Native folder picker (osascript). Returns None if the user cancels.
+#[cfg(target_os = "macos")]
+pub fn pick_folder() -> Result<Option<String>, String> {
+    let (ok, out) = crate::platform::run(
+        "osascript", &["-e", "POSIX path of (choose folder with prompt \"Select a project folder\")"]);
+    let s = out.trim().to_string();
+    if ok && !s.is_empty() { Ok(Some(s)) }
+    else if s.contains("User canceled") || s.is_empty() { Ok(None) }
+    else { Err(s) }
+}
+
+/// Open `project_path` in the given IDE with `account` active in its integrated
+/// terminal. `mode` = "seamless" (write .vscode/settings.json) or "wrapper"
+/// (rely on the global claude-<slug>). Always (re)installs the shims first.
+#[cfg(target_os = "macos")]
+pub fn open_in_ide(account: &str, ide_id: &str, project_path: &str, mode: &str) -> Result<(), String> {
+    use crate::platform::slugify;
+    let slug = slugify(account);
+    if slug.is_empty() { return Err("Invalid account name.".into()); }
+    let proj = std::path::PathBuf::from(project_path);
+    if !proj.is_dir() { return Err(format!("Not a folder: {project_path}")); }
+    let cli = imp::ide_cli(ide_id).ok_or_else(|| format!("IDE not found: {ide_id}"))?;
+
+    let bin = imp::install_shims(&slug)?; // both shim + wrapper
+
+    if mode == "seamless" {
+        let cfg = imp::cli_config_dir(&slug);
+        let vscode = proj.join(".vscode");
+        std::fs::create_dir_all(&vscode).map_err(|e| e.to_string())?;
+        let sp = vscode.join("settings.json");
+        let existing = std::fs::read_to_string(&sp).unwrap_or_default();
+        let merged = merge_vscode_settings(&existing, &bin.display().to_string(), &cfg.display().to_string())?;
+        std::fs::write(&sp, merged).map_err(|e| e.to_string())?;
+    }
+
+    // Open the folder (VS Code-family CLIs reuse a running instance; workspace
+    // settings still apply per-window).
+    let (ok, e) = crate::platform::run(&cli, &[project_path]);
+    if ok { Ok(()) } else { Err(e) }
+}
+
+#[cfg(target_os = "macos")]
+pub fn list_workspaces() -> Vec<Workspace> {
+    let mut w = imp::load_workspaces();
+    w.sort_by(|a, b| b.last_opened.cmp(&a.last_opened));
+    w
+}
+
+#[cfg(target_os = "macos")]
+pub fn save_workspace(account_slug: &str, account_name: &str, ide_id: &str, ide_name: &str,
+                      project_path: &str, mode: &str, now: u64) -> Result<(), String> {
+    let id = workspace_id(ide_id, account_slug, project_path);
+    let mut list = imp::load_workspaces();
+    if let Some(w) = list.iter_mut().find(|w| w.id == id) {
+        w.last_opened = Some(now); w.mode = mode.to_string();
+    } else {
+        list.push(Workspace {
+            id, account_slug: account_slug.into(), account_name: account_name.into(),
+            ide_id: ide_id.into(), ide_name: ide_name.into(), project_path: project_path.into(),
+            mode: mode.into(), created: Some(now), last_opened: Some(now),
+        });
+    }
+    imp::save_workspaces(&list)
+}
+
+#[cfg(target_os = "macos")]
+pub fn delete_workspace(id: &str) -> Result<(), String> {
+    let mut list = imp::load_workspaces();
+    list.retain(|w| w.id != id);
+    imp::save_workspaces(&list)
+}
+
+/// Open a saved workspace by id (re-applies activation + launches), stamping
+/// last_opened with `now`.
+#[cfg(target_os = "macos")]
+pub fn open_workspace(id: &str, now: u64) -> Result<(), String> {
+    let list = imp::load_workspaces();
+    let w = list.into_iter().find(|w| w.id == id).ok_or("No such workspace")?;
+    open_in_ide(&w.account_name, &w.ide_id, &w.project_path, &w.mode)?;
+    save_workspace(&w.account_slug, &w.account_name, &w.ide_id, &w.ide_name, &w.project_path, &w.mode, now)
+}
+
+// ---- non-macOS stubs -----------------------------------------------------
+#[cfg(not(target_os = "macos"))]
+const NOT_YET: &str = "IDE workspaces are macOS-only for now.";
+#[cfg(not(target_os = "macos"))]
+pub fn list_ides() -> Vec<Ide> { vec![] }
+#[cfg(not(target_os = "macos"))]
+pub fn pick_folder() -> Result<Option<String>, String> { Err(NOT_YET.into()) }
+#[cfg(not(target_os = "macos"))]
+pub fn open_in_ide(_a: &str, _i: &str, _p: &str, _m: &str) -> Result<(), String> { Err(NOT_YET.into()) }
+#[cfg(not(target_os = "macos"))]
+pub fn list_workspaces() -> Vec<Workspace> { vec![] }
+#[cfg(not(target_os = "macos"))]
+pub fn save_workspace(_a: &str, _b: &str, _c: &str, _d: &str, _e: &str, _f: &str, _n: u64) -> Result<(), String> { Err(NOT_YET.into()) }
+#[cfg(not(target_os = "macos"))]
+pub fn delete_workspace(_id: &str) -> Result<(), String> { Err(NOT_YET.into()) }
+#[cfg(not(target_os = "macos"))]
+pub fn open_workspace(_id: &str, _n: u64) -> Result<(), String> { Err(NOT_YET.into()) }
+
 #[cfg(test)]
 mod tests {
     use super::*;
