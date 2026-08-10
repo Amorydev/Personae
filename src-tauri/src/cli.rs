@@ -150,8 +150,129 @@ mod imp {
         fs::set_permissions(&lp, perm).map_err(|e| e.to_string())
     }
 
-    pub fn re_exports() {} // marker; real fns used by super below
 }
+
+// ---- public API (macOS) --------------------------------------------------
+#[cfg(target_os = "macos")]
+pub fn available() -> bool { imp::claude_bin().is_some() }
+
+#[cfg(target_os = "macos")]
+pub fn create(name: &str) -> Result<(), String> {
+    use crate::platform::slugify;
+    let slug = slugify(name);
+    if slug.is_empty() { return Err("Name must contain letters or numbers.".into()); }
+    let lp = imp::launcher_path(name);
+    if lp.exists() { return Err(format!("CLI profile already exists: {}", lp.display())); }
+    std::fs::create_dir_all(imp::config_dir(&slug)).map_err(|e| e.to_string())?;
+    imp::write_launcher(name, &slug)?;
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+pub fn set_token(name: &str, token: &str) -> Result<(), String> {
+    use crate::platform::slugify;
+    let slug = slugify(name);
+    let clean = parse_setup_token_output(token)
+        .ok_or("No token found in the pasted text.")?;
+    imp::kc_set(&slug, &clean)
+}
+
+#[cfg(target_os = "macos")]
+pub fn open_setup_token(name: &str) -> Result<(), String> {
+    use crate::platform::slugify;
+    let slug = slugify(name);
+    let bin = imp::claude_bin().ok_or("Claude Code CLI not found (install `claude`).")?;
+    let cfg = imp::config_dir(&slug);
+    // Single-quote the shell paths; the whole command is a double-quoted AppleScript string.
+    let shell_cmd = format!(
+        "export CLAUDE_CONFIG_DIR='{}'; '{}' setup-token; echo; echo '↑ COPY THE TOKEN ABOVE, then paste it into Claude Profiles.'",
+        cfg.display(), bin.display()
+    );
+    let script = format!("tell application \"Terminal\" to do script \"{}\"", shell_cmd.replace('"', "\\\""));
+    let (ok, out) = crate::platform::run("osascript", &["-e", &script, "-e", "tell application \"Terminal\" to activate"]);
+    if ok { Ok(()) } else { Err(out.trim().to_string()) }
+}
+
+#[cfg(target_os = "macos")]
+pub fn launch(name: &str) -> Result<(), String> {
+    let lp = imp::launcher_path(name);
+    if !lp.exists() { return Err(format!("No such CLI profile: {name}")); }
+    let (ok, e) = crate::platform::run("open", &[&lp.display().to_string()]);
+    if ok { Ok(()) } else { Err(e) }
+}
+
+#[cfg(target_os = "macos")]
+pub fn has_token(name: &str) -> bool {
+    imp::kc_has(&crate::platform::slugify(name))
+}
+
+#[cfg(target_os = "macos")]
+pub fn list() -> Vec<CliProfile> {
+    use crate::platform::{run, slugify, to_secs};
+    let mut out = vec![];
+    let rd = match std::fs::read_dir(imp::launcher_root()) { Ok(r) => r, Err(_) => return out };
+    for e in rd.flatten() {
+        let p = e.path();
+        if p.extension().map_or(false, |x| x == "command") {
+            let name = p.file_stem().unwrap_or_default().to_string_lossy().to_string();
+            let slug = slugify(&name);
+            let cfg = imp::config_dir(&slug);
+            let data_size = if cfg.exists() {
+                let (_, o) = run("du", &["-sh", &cfg.display().to_string()]);
+                o.split('\t').next().unwrap_or("—").trim().to_string()
+            } else { "—".into() };
+            let account_email = std::fs::read_to_string(cfg.join(".claude.json")).ok()
+                .and_then(|j| extract_email(&j));
+            let md = std::fs::metadata(&cfg).ok();
+            let created = md.as_ref().and_then(|m| m.created().ok()).and_then(to_secs);
+            let last_active = md.as_ref().and_then(|m| m.modified().ok()).and_then(to_secs);
+            out.push(CliProfile {
+                name, slug: slug.clone(),
+                config_dir: cfg.display().to_string(),
+                launcher_path: p.display().to_string(),
+                has_token: imp::kc_has(&slug),
+                account_email, data_size, created, last_active,
+            });
+        }
+    }
+    out.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    out
+}
+
+#[cfg(target_os = "macos")]
+pub fn delete(name: &str, purge: bool) -> Result<(), String> {
+    use crate::platform::slugify;
+    let slug = slugify(name);
+    let lp = imp::launcher_path(name);
+    if !lp.exists() { return Err(format!("No such CLI profile: {name}")); }
+    std::fs::remove_file(&lp).map_err(|e| e.to_string())?;
+    if purge {
+        imp::kc_delete(&slug);
+        let cfg = imp::config_dir(&slug);
+        if cfg.exists() { std::fs::remove_dir_all(&cfg).map_err(|e| e.to_string())?; }
+    }
+    Ok(())
+}
+
+// ---- public API (non-macOS stubs; Phase 3 will implement Win/Linux) ------
+#[cfg(not(target_os = "macos"))]
+const NOT_YET: &str = "CLI profiles are macOS-only for now.";
+#[cfg(not(target_os = "macos"))]
+pub fn available() -> bool { false }
+#[cfg(not(target_os = "macos"))]
+pub fn list() -> Vec<CliProfile> { vec![] }
+#[cfg(not(target_os = "macos"))]
+pub fn create(_name: &str) -> Result<(), String> { Err(NOT_YET.into()) }
+#[cfg(not(target_os = "macos"))]
+pub fn set_token(_name: &str, _token: &str) -> Result<(), String> { Err(NOT_YET.into()) }
+#[cfg(not(target_os = "macos"))]
+pub fn open_setup_token(_name: &str) -> Result<(), String> { Err(NOT_YET.into()) }
+#[cfg(not(target_os = "macos"))]
+pub fn launch(_name: &str) -> Result<(), String> { Err(NOT_YET.into()) }
+#[cfg(not(target_os = "macos"))]
+pub fn delete(_name: &str, _purge: bool) -> Result<(), String> { Err(NOT_YET.into()) }
+#[cfg(not(target_os = "macos"))]
+pub fn has_token(_name: &str) -> bool { false }
 
 #[cfg(test)]
 mod tests {
