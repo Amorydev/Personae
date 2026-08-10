@@ -19,7 +19,10 @@ const MOCK = [
 const MOCK_CLI = [
   { name: "Work CLI", slug: "work-cli", config_dir: "/Users/you/Library/Application Support/ClaudeProfilesCLI/work-cli",
     launcher_path: "/Users/you/Applications/Claude Profiles CLI/Work CLI.command",
-    has_token: true, account_email: "work@corp.com", auth_kind: "subscription", data_size: "12M", created: now() - 86400, last_active: now() - 300 },
+    logged_in: true, account_email: "work@corp.com", data_size: "12M", created: now() - 86400, last_active: now() - 300 },
+  { name: "Personal CLI", slug: "personal-cli", config_dir: "/Users/you/Library/Application Support/ClaudeProfilesCLI/personal-cli",
+    launcher_path: "/Users/you/Applications/Claude Profiles CLI/Personal CLI.command",
+    logged_in: false, account_email: null, data_size: "0B", created: now() - 3600, last_active: null },
 ];
 
 const MOCK_WS = [
@@ -55,12 +58,10 @@ async function invoke(cmd, args) {
       const slug = args.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
       MOCK_CLI.push({ name: args.name, slug, config_dir: `/Users/you/Library/Application Support/ClaudeProfilesCLI/${slug}`,
         launcher_path: `/Users/you/Applications/Claude Profiles CLI/${args.name}.command`,
-        has_token: false, account_email: null, auth_kind: null, data_size: "0B", created: now(), last_active: now() });
+        logged_in: false, account_email: null, data_size: "0B", created: now(), last_active: now() });
       return;
     }
-    case "set_cli_token": { const p = MOCK_CLI.find(m => m.name === args.name); if (p) { p.has_token = true; const api = String(args.token).startsWith("sk-ant-api"); p.auth_kind = api ? "console" : "subscription"; p.account_email = api ? null : "you@example.com"; } return; }
-    case "open_cli_setup_token": console.log("setup-token", args.name); return;
-    case "capture_cli_token": return null;
+    case "login_cli_profile": console.log("login", args.name); return;
     case "launch_cli_profile": console.log("launch cli", args.name); return;
     case "delete_cli_profile": { const i = MOCK_CLI.findIndex(m => m.name === args.name); if (i >= 0) MOCK_CLI.splice(i, 1); return; }
     case "list_ides": return [
@@ -329,14 +330,10 @@ function closeModals() {
   $("#create-modal").classList.add("hidden");
   $("#edit-modal").classList.add("hidden");
   $("#del-modal").classList.add("hidden");
-  $("#token-modal")?.classList.add("hidden");
   $("#cli-create-modal")?.classList.add("hidden");
   $("#cli-del-modal")?.classList.add("hidden");
   $("#ide-modal")?.classList.add("hidden");
-  if (typeof stopCapturePolling === "function") stopCapturePolling();
-  if (typeof setTokenStatus === "function") setTokenStatus("");
   pendingDelete = null;
-  tokenTarget = null;
 }
 function anyModalOpen() {
   return ![...document.querySelectorAll(".modal")].every((m) => m.classList.contains("hidden"));
@@ -409,10 +406,10 @@ function renderCliList() {
     nm.className = "nm";
     nm.textContent = p.name;
     li.appendChild(nm);
-    if (!p.has_token) {
+    if (!p.logged_in) {
       const w = document.createElement("span");
       w.className = "badge warn";
-      w.textContent = "no credential";
+      w.textContent = "no login";
       li.appendChild(w);
     }
     li.onclick = () => { cliSelected = p.slug; renderCliList(); renderCliDetail(); };
@@ -433,21 +430,20 @@ function renderCliDetail() {
   if (!p) {
     bar.classList.add("hidden");
     body.innerHTML = `<div class="empty"><div class="big">No CLI account</div>
-      <div class="small">Create one, then set its credential — a subscription token (<code>claude setup-token</code>) or a Console API key.</div></div>`;
+      <div class="small">Create one, then log in — a real Claude account login, isolated per profile.</div></div>`;
     return;
   }
   bar.classList.remove("hidden");
-  const kind = p.auth_kind === "console" ? "Console API" : p.auth_kind === "subscription" ? "Subscription" : "";
-  const sub = p.account_email ? escapeHtml(p.account_email)
-    : (p.has_token ? (kind ? `${kind} credential set` : "Credential set")
-                   : '<span style="color:var(--warn)">No credential — set one to use this account</span>');
+  const sub = p.account_email
+    ? `Logged in — ${escapeHtml(p.account_email)}`
+    : '<span style="color:var(--warn)">Not logged in — click "Log in"</span>';
   body.innerHTML = `
     <div class="hero"><div class="meta">
       <div class="name">${escapeHtml(p.name)}</div>
       <div class="sub">${sub}</div>
     </div></div>
     <div class="stats">
-      <div class="stat"><div class="k">Auth</div><div class="v">${p.has_token ? (kind || "✓ set") : "— none"}</div></div>
+      <div class="stat"><div class="k">Account</div><div class="v">${p.account_email ? escapeHtml(p.account_email) : "—"}</div></div>
       <div class="stat"><div class="k">Storage</div><div class="v">${prettySize(p.data_size)}</div></div>
       <div class="stat"><div class="k">Last active</div><div class="v">${relTime(p.last_active)}</div></div>
     </div>`;
@@ -464,8 +460,15 @@ function renderCliDetail() {
 
   const primary = $("#cli-primary");
   primary.textContent = `Launch ${p.name}`;
-  primary.disabled = !p.has_token;
+  primary.disabled = false;
   primary.onclick = () => doCliLaunch(p);
+}
+
+async function doCliLogin() {
+  const p = cliCurrent(); if (!p) return;
+  try { await invoke("login_cli_profile", { name: p.name }); }
+  catch (e) { alert(String(e)); return; }
+  alert(`A Terminal opened for "${p.name}". Complete /login there (choose your account), then come back — the account will show here.`);
 }
 
 async function doCliLaunch(p) {
@@ -486,58 +489,7 @@ async function doCliCreate() {
   $("#cli-create-modal").classList.add("hidden");
   await reloadCli();
   const made = cliProfiles.find((p) => p.name === name);
-  if (made) { cliSelected = made.slug; renderCliList(); renderCliDetail(); openTokenModal(); }
-}
-
-let tokenTarget = null;
-let capturePoll = null;
-function setTokenStatus(msg) { const s = $("#token-status"); if (s) s.textContent = msg || ""; }
-function stopCapturePolling() { if (capturePoll) { clearInterval(capturePoll); capturePoll = null; } }
-
-function openTokenModal() {
-  const p = cliCurrent(); if (!p) return;
-  tokenTarget = p;
-  stopCapturePolling();
-  setTokenStatus("");
-  $("#token-input").value = "";
-  $("#token-modal").classList.remove("hidden");
-  setTimeout(() => $("#token-input").focus(), 30);
-}
-function closeTokenModal() {
-  stopCapturePolling();
-  setTokenStatus("");
-  $("#token-modal").classList.add("hidden");
-  tokenTarget = null;
-}
-
-// Subscription path: after opening `setup-token` in Terminal, poll for the token
-// the app captures automatically — no copy-paste needed.
-function startCapturePolling(name) {
-  stopCapturePolling();
-  setTokenStatus("⏳ Waiting — finish the login in the Terminal window…");
-  let tries = 0;
-  capturePoll = setInterval(async () => {
-    if (++tries > 150) { stopCapturePolling(); setTokenStatus("Timed out. Paste the token below, or try again."); return; }
-    let kind;
-    try { kind = await invoke("capture_cli_token", { name }); } catch (e) { return; }
-    if (kind) {
-      const label = kind === "console" ? "Console API" : "Subscription";
-      stopCapturePolling();
-      setTokenStatus(`✅ ${label} credential captured.`);
-      await reloadCli();
-      setTimeout(closeTokenModal, 700);
-    }
-  }, 2000);
-}
-
-async function doTokenSave() {
-  if (!tokenTarget) return;
-  const token = $("#token-input").value.trim();
-  if (!token) return;
-  try { await invoke("set_cli_token", { name: tokenTarget.name, token }); }
-  catch (e) { alert(String(e)); return; }
-  closeTokenModal();
-  await reloadCli();
+  if (made) { cliSelected = made.slug; renderCliList(); renderCliDetail(); await doCliLogin(); }
 }
 
 function openCliDelete() {
@@ -557,7 +509,7 @@ async function doCliDelete() {
 let ideFolder = null;
 async function openIdeModal() {
   const p = cliCurrent(); if (!p) return;
-  if (!p.has_token) { alert("Set this account's credential first."); return; }
+  if (!p.logged_in) { alert("Log in to this account first."); return; }
   const ides = await invoke("list_ides");
   if (!ides.length) { alert("No VS Code-family IDE found (VS Code, Cursor, Windsurf, Antigravity)."); return; }
   const sel = $("#ide-select");
@@ -576,7 +528,7 @@ async function doOpenIde() {
   const p = cliCurrent(); if (!p) return;
   if (!ideFolder) { $("#ide-status").textContent = "Choose a project folder first."; return; }
   const sel = $("#ide-select"), opt = sel.options[sel.selectedIndex];
-  const ide_id = sel.value, ide_name = opt.dataset.name, mode = $("#ide-mode").value;
+  const ide_id = sel.value, ide_name = opt.dataset.name, mode = "seamless";
   $("#ide-status").textContent = "Opening…";
   try {
     await invoke("open_in_ide", { account: p.name, ideId: ide_id, projectPath: ideFolder, mode });
@@ -632,24 +584,14 @@ window.addEventListener("DOMContentLoaded", () => {
   $("#cli-new-side").onclick = openCliCreate;
   $("#cli-create-cancel").onclick = closeModals;
   $("#cli-create-go").onclick = doCliCreate;
-  $("#cli-settoken").onclick = openTokenModal;
+  $("#cli-login").onclick = doCliLogin;
   $("#cli-delete").onclick = openCliDelete;
   $("#cli-del-cancel").onclick = closeModals;
   $("#cli-del-go").onclick = doCliDelete;
-  $("#token-open").onclick = async () => {
-    const p = cliCurrent(); if (!p) return;
-    try { await invoke("open_cli_setup_token", { name: p.name }); }
-    catch (e) { alert(String(e)); return; }
-    startCapturePolling(p.name);
-  };
-  $("#token-console").onclick = () => invoke("open_url", { url: "https://console.anthropic.com/settings/keys" });
-  $("#token-cancel").onclick = closeTokenModal;
-  $("#token-save").onclick = doTokenSave;
   $("#cli-open-ide").onclick = openIdeModal;
   $("#ide-pick").onclick = doPickFolder;
   $("#ide-cancel").onclick = () => $("#ide-modal").classList.add("hidden");
   $("#ide-go").onclick = doOpenIde;
-  // #token-modal already gets outside-click-to-close from the generic ".modal" loop below.
   for (const m of document.querySelectorAll(".modal")) {
     m.addEventListener("click", (e) => { if (e.target === m) closeModals(); });
   }

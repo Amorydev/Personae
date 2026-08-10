@@ -86,7 +86,7 @@
 
         <div id="cli-actionbar" class="actionbar hidden">
           <button id="cli-primary" class="primary"></button>
-          <button id="cli-settoken" class="btn">Set credential</button>
+          <button id="cli-login" class="btn">Log in</button>
           <button id="cli-open-ide" class="btn">Open in IDE…</button>
           <div class="spacer"></div>
           <button id="cli-delete" class="danger">Delete</button>
@@ -150,27 +150,10 @@
     <div id="cli-del-modal" class="modal hidden">
       <div class="modal-card">
         <div id="cli-del-title" class="modal-title"></div>
-        <p class="hint">This removes the launcher, its stored token, and its CLI config directory. This cannot be undone.</p>
+        <p class="hint">This removes the launcher, its login, and its CLI config directory. This cannot be undone.</p>
         <div class="modal-actions">
           <button id="cli-del-cancel" class="btn">Cancel</button>
           <button id="cli-del-go" class="danger">Delete account</button>
-        </div>
-      </div>
-    </div>
-
-    <!-- ================= set credential modal ================= -->
-    <div id="token-modal" class="modal hidden">
-      <div class="modal-card">
-        <div class="modal-title">Set credential</div>
-        <p class="hint"><b>Option 1 — Subscription</b> (Pro / Max / Team): run <code>claude setup-token</code>, log in to the account you want, then paste the <code>sk-ant-oat…</code> token.</p>
-        <button id="token-open" class="btn">Open setup-token in Terminal…</button>
-        <p class="hint"><b>Option 2 — Console API</b> (usage-based billing): create an API key, then paste the <code>sk-ant-api…</code> key.</p>
-        <button id="token-console" class="btn">Open Anthropic Console…</button>
-        <textarea id="token-input" rows="3" placeholder="Paste sk-ant-oat… (subscription) or sk-ant-api… (Console API)"></textarea>
-        <div id="token-status" class="hint"></div>
-        <div class="modal-actions">
-          <button id="token-cancel" class="btn">Cancel</button>
-          <button id="token-save" class="primary">Save</button>
         </div>
       </div>
     </div>
@@ -188,12 +171,7 @@
           <div id="ide-folder" class="path" style="flex:1">No folder chosen</div>
           <button id="ide-pick" class="btn">Choose…</button>
         </div>
-        <label class="k" for="ide-mode">Activation</label>
-        <select id="ide-mode" class="text">
-          <option value="seamless">Seamless — terminal auto-uses this account (writes .vscode/settings.json)</option>
-          <option value="wrapper">Wrapper — run claude-&lt;account&gt; yourself (nothing written to project)</option>
-        </select>
-        <p class="hint"><b>Seamless</b>: opening the project auto-starts Claude on this account (approve <b>“Allow automatic tasks”</b> the first time), and <b>every terminal you open in the project</b> is on this account too — just type <code>claude</code>. Only paths are written to <code>.vscode</code>; the token stays in your Keychain. <b>Wrapper</b> instead writes nothing to the project — you run <code>claude-&lt;account&gt;</code> yourself (needs <code>~/.local/bin</code> on PATH).</p>
+        <p class="hint">Opening the project sets <code>CLAUDE_CONFIG_DIR</code> for its terminals and auto-opens a Claude terminal on this account (approve “Allow automatic tasks” the first time). Just type <code>claude</code> in any terminal there.</p>
         <div id="ide-status" class="hint"></div>
         <div class="modal-actions">
           <button id="ide-cancel" class="btn">Cancel</button>
