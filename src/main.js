@@ -585,6 +585,8 @@ window.addEventListener("DOMContentLoaded", () => {
   $("#cli-create-cancel").onclick = closeModals;
   $("#cli-create-go").onclick = doCliCreate;
   $("#cli-login").onclick = doCliLogin;
+  // When returning from the Terminal (after `claude auth login`), re-detect login.
+  window.addEventListener("focus", () => { if (view === "cli") reloadCli(); });
   $("#cli-delete").onclick = openCliDelete;
   $("#cli-del-cancel").onclick = closeModals;
   $("#cli-del-go").onclick = doCliDelete;

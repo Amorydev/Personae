@@ -134,6 +134,17 @@ mod imp {
     pub fn login_keychain_service(slug: &str) -> String {
         super::login_keychain_service_for_dir(&config_dir(slug).display().to_string())
     }
+
+    /// Whether a login credential is stored for this profile — checked by the
+    /// existence of claude's per-config-dir Keychain slot. This is the reliable
+    /// signal: `claude auth status` reports a false negative once the access
+    /// token expires (even though the refresh token is still valid and usage
+    /// works), and `oauthAccount` in .claude.json is only populated lazily.
+    pub fn login_present(slug: &str) -> bool {
+        let svc = login_keychain_service(slug);
+        let user = std::env::var("USER").unwrap_or_default();
+        run("security", &["find-generic-password", "-s", &svc, "-a", &user]).0
+    }
 }
 
 /// Absolute path to claude if resolvable, else the bare command name "claude".
@@ -163,9 +174,9 @@ pub fn create(name: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// Open a Terminal in this profile's config dir so the user can run the one-time
-/// `/login`. First run shows the login menu; after logging in, the credential
-/// lives in the profile's own Keychain slot.
+/// Open a Terminal in this profile's config dir running `claude auth login` — the
+/// one-time real sign-in. The credential is stored in this profile's own
+/// Keychain slot (namespaced by config dir), isolated from other profiles.
 #[cfg(target_os = "macos")]
 pub fn login(name: &str) -> Result<(), String> {
     use crate::platform::slugify;
@@ -174,7 +185,7 @@ pub fn login(name: &str) -> Result<(), String> {
     let bin = imp::claude_bin().ok_or("Claude Code CLI not found (install `claude`).")?;
     let cfg = imp::config_dir(&slug);
     let shell_cmd = format!(
-        "export CLAUDE_CONFIG_DIR={}; {} /login",
+        "export CLAUDE_CONFIG_DIR={}; {} auth login",
         sh_quote(&cfg.display().to_string()), sh_quote(&bin.display().to_string())
     );
     let as_arg = shell_cmd.replace('\\', "\\\\").replace('"', "\\\"");
@@ -208,7 +219,9 @@ pub fn list() -> Vec<CliProfile> {
             } else { "—".into() };
             let account_email = std::fs::read_to_string(cfg.join(".claude.json")).ok()
                 .and_then(|j| extract_email(&j));
-            let logged_in = account_email.is_some();
+            // Reliable signal = the login's Keychain slot exists (email is only a
+            // lazily-cached display value that may lag behind the actual login).
+            let logged_in = imp::login_present(&slug);
             let md = std::fs::metadata(&cfg).ok();
             let created = md.as_ref().and_then(|m| m.created().ok()).and_then(to_secs);
             let last_active = md.as_ref().and_then(|m| m.modified().ok()).and_then(to_secs);
