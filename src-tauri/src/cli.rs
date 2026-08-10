@@ -95,6 +95,18 @@ pub fn parse_setup_token_output(raw: &str) -> Option<String> {
         .map(|s| s.to_string())
 }
 
+/// Robustly extract an sk-ant-* credential from noisy text — handles ANSI colour
+/// codes / labels around the token that `claude setup-token` prints. Returns None
+/// when no plausible token is present yet (used to poll the capture file).
+pub fn extract_token_lenient(raw: &str) -> Option<String> {
+    let idx = raw.find("sk-ant-")?;
+    let tok: String = raw[idx..]
+        .chars()
+        .take_while(|c| c.is_ascii_alphanumeric() || *c == '-' || *c == '_')
+        .collect();
+    if tok.len() > 12 { Some(tok) } else { None }
+}
+
 /// Cheap extract of oauthAccount.emailAddress from a .claude.json body without
 /// pulling in serde_json.
 pub fn extract_email(json: &str) -> Option<String> {
@@ -124,6 +136,8 @@ mod imp {
     pub fn launcher_path(name: &str) -> PathBuf { launcher_root().join(format!("{name}.command")) }
     pub fn config_dir(slug: &str) -> PathBuf { config_root().join(slug) }
     pub fn keychain_service(slug: &str) -> String { format!("{KEYCHAIN_PREFIX}.{slug}") }
+    // Temp capture file where `setup-token`'s output is tee'd, then polled + removed.
+    pub fn seed_file(slug: &str) -> PathBuf { config_dir(slug).join(".setup-token.out") }
 
     /// Resolve the claude CLI binary (env override → PATH → common install dirs).
     pub fn claude_bin() -> Option<PathBuf> {
@@ -215,16 +229,36 @@ pub fn open_setup_token(name: &str) -> Result<(), String> {
     if !imp::launcher_path(name).exists() { return Err(format!("No such CLI profile: {name}")); }
     let bin = imp::claude_bin().ok_or("Claude Code CLI not found (install `claude`).")?;
     let cfg = imp::config_dir(&slug);
-    // Single-quote the shell paths; the whole command is a double-quoted AppleScript string.
+    let cap = imp::seed_file(&slug);
+    // Tee setup-token's output to a capture file so the app can auto-detect the
+    // token (no manual copy-paste). Single-quote the shell paths; the whole
+    // command is a double-quoted AppleScript string.
     let shell_cmd = format!(
-        "export CLAUDE_CONFIG_DIR={}; {} setup-token; echo; echo '↑ COPY THE TOKEN ABOVE, then paste it into Claude Profiles.'",
-        sh_sq_quote(&cfg.display().to_string()), sh_sq_quote(&bin.display().to_string())
+        "export CLAUDE_CONFIG_DIR={}; {} setup-token 2>&1 | tee {}; echo; echo '✅ Done — return to Claude Profiles; the token is captured automatically.'",
+        sh_sq_quote(&cfg.display().to_string()), sh_sq_quote(&bin.display().to_string()), sh_sq_quote(&cap.display().to_string())
     );
     // AppleScript double-quoted string: escape backslash first, then double-quote.
     let as_arg = shell_cmd.replace('\\', "\\\\").replace('"', "\\\"");
     let script = format!("tell application \"Terminal\" to do script \"{}\"", as_arg);
     let (ok, out) = crate::platform::run("osascript", &["-e", &script, "-e", "tell application \"Terminal\" to activate"]);
     if ok { Ok(()) } else { Err(out.trim().to_string()) }
+}
+
+/// Poll the capture file left by `open_setup_token`; if a token has been printed,
+/// store it (Keychain + kind marker), delete the plaintext capture file, and
+/// return the auth kind. Returns Ok(None) while nothing is captured yet.
+#[cfg(target_os = "macos")]
+pub fn capture_token(name: &str) -> Result<Option<String>, String> {
+    use crate::platform::slugify;
+    let slug = slugify(name);
+    let cap = imp::seed_file(&slug);
+    let raw = match std::fs::read_to_string(&cap) { Ok(s) => s, Err(_) => return Ok(None) };
+    let token = match extract_token_lenient(&raw) { Some(t) => t, None => return Ok(None) };
+    imp::kc_set(&slug, &token)?;
+    let cfg = imp::config_dir(&slug);
+    let _ = std::fs::write(cfg.join(".cli-auth-kind"), credential_kind(&token));
+    let _ = std::fs::remove_file(&cap); // never leave the token in a plaintext file
+    Ok(Some(credential_kind(&token).to_string()))
 }
 
 #[cfg(target_os = "macos")]
@@ -299,6 +333,8 @@ pub fn set_token(_name: &str, _token: &str) -> Result<(), String> { Err(NOT_YET.
 #[cfg(not(target_os = "macos"))]
 pub fn open_setup_token(_name: &str) -> Result<(), String> { Err(NOT_YET.into()) }
 #[cfg(not(target_os = "macos"))]
+pub fn capture_token(_name: &str) -> Result<Option<String>, String> { Err(NOT_YET.into()) }
+#[cfg(not(target_os = "macos"))]
 pub fn launch(_name: &str) -> Result<(), String> { Err(NOT_YET.into()) }
 #[cfg(not(target_os = "macos"))]
 pub fn delete(_name: &str, _purge: bool) -> Result<(), String> { Err(NOT_YET.into()) }
@@ -316,6 +352,15 @@ mod tests {
         assert!(s.contains("sk-ant-api*) export ANTHROPIC_API_KEY=\"$CRED\""));
         assert!(s.contains("export CLAUDE_CODE_OAUTH_TOKEN=\"$CRED\""));
         assert!(s.trim_end().ends_with("exec \"$CLAUDE_BIN\" \"$@\""));
+    }
+
+    #[test]
+    fn extract_token_lenient_handles_noise() {
+        // ANSI colour codes around the token (as setup-token may print) are stripped.
+        let noisy = "Your token:\n\u{1b}[1msk-ant-oat01-ABCDEFGHIJKLMNOP\u{1b}[0m\nDone.";
+        assert_eq!(extract_token_lenient(noisy).as_deref(), Some("sk-ant-oat01-ABCDEFGHIJKLMNOP"));
+        assert_eq!(extract_token_lenient("no token yet, still logging in"), None);
+        assert_eq!(extract_token_lenient("sk-ant-short"), None); // 12 chars — too short
     }
 
     #[test]

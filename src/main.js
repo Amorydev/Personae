@@ -54,6 +54,7 @@ async function invoke(cmd, args) {
     }
     case "set_cli_token": { const p = MOCK_CLI.find(m => m.name === args.name); if (p) { p.has_token = true; const api = String(args.token).startsWith("sk-ant-api"); p.auth_kind = api ? "console" : "subscription"; p.account_email = api ? null : "you@example.com"; } return; }
     case "open_cli_setup_token": console.log("setup-token", args.name); return;
+    case "capture_cli_token": return null;
     case "launch_cli_profile": console.log("launch cli", args.name); return;
     case "delete_cli_profile": { const i = MOCK_CLI.findIndex(m => m.name === args.name); if (i >= 0) MOCK_CLI.splice(i, 1); return; }
     default: return;
@@ -312,6 +313,8 @@ function closeModals() {
   $("#token-modal")?.classList.add("hidden");
   $("#cli-create-modal")?.classList.add("hidden");
   $("#cli-del-modal")?.classList.add("hidden");
+  if (typeof stopCapturePolling === "function") stopCapturePolling();
+  if (typeof setTokenStatus === "function") setTokenStatus("");
   pendingDelete = null;
   tokenTarget = null;
 }
@@ -466,21 +469,53 @@ async function doCliCreate() {
 }
 
 let tokenTarget = null;
+let capturePoll = null;
+function setTokenStatus(msg) { const s = $("#token-status"); if (s) s.textContent = msg || ""; }
+function stopCapturePolling() { if (capturePoll) { clearInterval(capturePoll); capturePoll = null; } }
+
 function openTokenModal() {
   const p = cliCurrent(); if (!p) return;
   tokenTarget = p;
+  stopCapturePolling();
+  setTokenStatus("");
   $("#token-input").value = "";
   $("#token-modal").classList.remove("hidden");
   setTimeout(() => $("#token-input").focus(), 30);
 }
+function closeTokenModal() {
+  stopCapturePolling();
+  setTokenStatus("");
+  $("#token-modal").classList.add("hidden");
+  tokenTarget = null;
+}
+
+// Subscription path: after opening `setup-token` in Terminal, poll for the token
+// the app captures automatically — no copy-paste needed.
+function startCapturePolling(name) {
+  stopCapturePolling();
+  setTokenStatus("⏳ Waiting — finish the login in the Terminal window…");
+  let tries = 0;
+  capturePoll = setInterval(async () => {
+    if (++tries > 150) { stopCapturePolling(); setTokenStatus("Timed out. Paste the token below, or try again."); return; }
+    let kind;
+    try { kind = await invoke("capture_cli_token", { name }); } catch (e) { return; }
+    if (kind) {
+      const label = kind === "console" ? "Console API" : "Subscription";
+      stopCapturePolling();
+      setTokenStatus(`✅ ${label} credential captured.`);
+      await reloadCli();
+      setTimeout(closeTokenModal, 700);
+    }
+  }, 2000);
+}
+
 async function doTokenSave() {
   if (!tokenTarget) return;
   const token = $("#token-input").value.trim();
   if (!token) return;
   try { await invoke("set_cli_token", { name: tokenTarget.name, token }); }
   catch (e) { alert(String(e)); return; }
-  $("#token-modal").classList.add("hidden");
-  tokenTarget = null;
+  closeTokenModal();
   await reloadCli();
 }
 
@@ -518,9 +553,14 @@ window.addEventListener("DOMContentLoaded", () => {
   $("#cli-delete").onclick = openCliDelete;
   $("#cli-del-cancel").onclick = closeModals;
   $("#cli-del-go").onclick = doCliDelete;
-  $("#token-open").onclick = () => { const p = cliCurrent(); if (p) invoke("open_cli_setup_token", { name: p.name }); };
+  $("#token-open").onclick = async () => {
+    const p = cliCurrent(); if (!p) return;
+    try { await invoke("open_cli_setup_token", { name: p.name }); }
+    catch (e) { alert(String(e)); return; }
+    startCapturePolling(p.name);
+  };
   $("#token-console").onclick = () => invoke("open_url", { url: "https://console.anthropic.com/settings/keys" });
-  $("#token-cancel").onclick = () => { $("#token-modal").classList.add("hidden"); tokenTarget = null; };
+  $("#token-cancel").onclick = closeTokenModal;
   $("#token-save").onclick = doTokenSave;
   // #token-modal already gets outside-click-to-close from the generic ".modal" loop below.
   for (const m of document.querySelectorAll(".modal")) {

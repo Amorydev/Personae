@@ -66,6 +66,9 @@ fn set_cli_token(name: String, token: String) -> Result<(), String> { cli::set_t
 fn open_cli_setup_token(name: String) -> Result<(), String> { cli::open_setup_token(&name) }
 
 #[tauri::command]
+fn capture_cli_token(name: String) -> Result<Option<String>, String> { cli::capture_token(&name) }
+
+#[tauri::command]
 fn launch_cli_profile(name: String) -> Result<(), String> { cli::launch(&name) }
 
 #[tauri::command]
@@ -80,7 +83,7 @@ pub fn run() {
             launch_profile, quit_profile, delete_profile, repair_profiles,
             set_profile_color, reveal_path, open_url,
             cli_available, list_cli_profiles, create_cli_profile, set_cli_token,
-            open_cli_setup_token, launch_cli_profile, delete_cli_profile
+            open_cli_setup_token, capture_cli_token, launch_cli_profile, delete_cli_profile
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
