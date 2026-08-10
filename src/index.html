@@ -69,6 +69,8 @@
         <div class="side-foot">
           <button id="cli-new-side" class="newbtn"><span class="plus">+</span> New CLI account</button>
         </div>
+        <div class="section">Workspaces</div>
+        <ul id="ws-list" class="profiles"></ul>
       </aside>
 
       <main class="detail cli-detail">
@@ -85,6 +87,7 @@
         <div id="cli-actionbar" class="actionbar hidden">
           <button id="cli-primary" class="primary"></button>
           <button id="cli-settoken" class="btn">Set credential</button>
+          <button id="cli-open-ide" class="btn">Open in IDE…</button>
           <div class="spacer"></div>
           <button id="cli-delete" class="danger">Delete</button>
         </div>
@@ -168,6 +171,33 @@
         <div class="modal-actions">
           <button id="token-cancel" class="btn">Cancel</button>
           <button id="token-save" class="primary">Save</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ================= Open in IDE modal ================= -->
+    <div id="ide-modal" class="modal hidden">
+      <div class="modal-card">
+        <div class="modal-title">Open in IDE</div>
+        <label class="k">Account</label>
+        <div id="ide-account" class="path"></div>
+        <label class="k" for="ide-select">IDE</label>
+        <select id="ide-select" class="text"></select>
+        <label class="k">Project folder</label>
+        <div class="row">
+          <div id="ide-folder" class="path" style="flex:1">No folder chosen</div>
+          <button id="ide-pick" class="btn">Choose…</button>
+        </div>
+        <label class="k" for="ide-mode">Activation</label>
+        <select id="ide-mode" class="text">
+          <option value="seamless">Seamless — terminal auto-uses this account (writes .vscode/settings.json)</option>
+          <option value="wrapper">Wrapper — run claude-&lt;account&gt; yourself (nothing written to project)</option>
+        </select>
+        <p class="hint">Seamless writes only paths into <code>.vscode/settings.json</code> — the token stays in your Keychain. Wrapper mode requires <code>~/.local/bin</code> on your PATH.</p>
+        <div id="ide-status" class="hint"></div>
+        <div class="modal-actions">
+          <button id="ide-cancel" class="btn">Cancel</button>
+          <button id="ide-go" class="primary">Open</button>
         </div>
       </div>
     </div>
