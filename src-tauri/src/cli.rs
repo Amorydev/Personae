@@ -30,6 +30,11 @@ pub fn sh_dq_escape(s: &str) -> String {
     out
 }
 
+/// Wrap a string as a safe POSIX single-quoted shell word (handles embedded ').
+pub fn sh_sq_quote(s: &str) -> String {
+    format!("'{}'", s.replace('\'', "'\\''"))
+}
+
 /// The bash body of a profile launcher. Reads the token from the Keychain at run
 /// time (never bakes it into the file) and execs the real claude CLI.
 /// Precondition: `slug` must be pre-slugified ([a-z0-9-], via platform::slugify) — it is interpolated raw into the Keychain service/account strings.
@@ -181,14 +186,17 @@ pub fn set_token(name: &str, token: &str) -> Result<(), String> {
 pub fn open_setup_token(name: &str) -> Result<(), String> {
     use crate::platform::slugify;
     let slug = slugify(name);
+    if !imp::launcher_path(name).exists() { return Err(format!("No such CLI profile: {name}")); }
     let bin = imp::claude_bin().ok_or("Claude Code CLI not found (install `claude`).")?;
     let cfg = imp::config_dir(&slug);
     // Single-quote the shell paths; the whole command is a double-quoted AppleScript string.
     let shell_cmd = format!(
-        "export CLAUDE_CONFIG_DIR='{}'; '{}' setup-token; echo; echo '↑ COPY THE TOKEN ABOVE, then paste it into Claude Profiles.'",
-        cfg.display(), bin.display()
+        "export CLAUDE_CONFIG_DIR={}; {} setup-token; echo; echo '↑ COPY THE TOKEN ABOVE, then paste it into Claude Profiles.'",
+        sh_sq_quote(&cfg.display().to_string()), sh_sq_quote(&bin.display().to_string())
     );
-    let script = format!("tell application \"Terminal\" to do script \"{}\"", shell_cmd.replace('"', "\\\""));
+    // AppleScript double-quoted string: escape backslash first, then double-quote.
+    let as_arg = shell_cmd.replace('\\', "\\\\").replace('"', "\\\"");
+    let script = format!("tell application \"Terminal\" to do script \"{}\"", as_arg);
     let (ok, out) = crate::platform::run("osascript", &["-e", &script, "-e", "tell application \"Terminal\" to activate"]);
     if ok { Ok(()) } else { Err(out.trim().to_string()) }
 }
@@ -285,6 +293,12 @@ mod tests {
         assert!(s.contains("com.claudeprofiles.cli.work"));
         assert!(s.contains("export CLAUDE_CODE_OAUTH_TOKEN=\"$TOKEN\""));
         assert!(s.trim_end().ends_with("exec \"$CLAUDE_BIN\" \"$@\""));
+    }
+
+    #[test]
+    fn sh_sq_quote_escapes_single_quotes() {
+        assert_eq!(sh_sq_quote("/tmp/plain"), "'/tmp/plain'");
+        assert_eq!(sh_sq_quote("/Users/O'Brien/x"), "'/Users/O'\\''Brien/x'");
     }
 
     #[test]
