@@ -18,6 +18,9 @@ jobs:
             args: ''
 
     runs-on: ${{ matrix.platform }}
+    # Dùng để bỏ qua bước upload VPS khi chưa cấu hình secrets (build vẫn xanh).
+    env:
+      VPS_HOST: ${{ secrets.VPS_HOST }}
     steps:
       - uses: actions/checkout@v4
 
@@ -54,10 +57,10 @@ jobs:
       # Upload file cài đặt lên VPS qua SSH (nguồn tải công khai, KHÔNG lộ GitHub).
       # Repo để private — người dùng tải qua https://claudemux.com/dl/latest/...
       - name: Upload installers to VPS
+        if: ${{ env.VPS_HOST != '' }}
         shell: bash
         env:
           VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
-          VPS_HOST: ${{ secrets.VPS_HOST }}
           VPS_USER: ${{ secrets.VPS_USER }}
           VPS_PATH: ${{ secrets.VPS_PATH }}   # vd: /var/www/claudemux/dl
           VPS_PORT: ${{ secrets.VPS_PORT }}   # tùy chọn, mặc định 22
