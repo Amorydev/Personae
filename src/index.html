@@ -193,7 +193,7 @@
           <option value="seamless">Seamless — terminal auto-uses this account (writes .vscode/settings.json)</option>
           <option value="wrapper">Wrapper — run claude-&lt;account&gt; yourself (nothing written to project)</option>
         </select>
-        <p class="hint"><b>Seamless</b> writes only paths into <code>.vscode/settings.json</code> — the token stays in your Keychain. Open a <b>fresh</b> integrated terminal after the IDE opens. If your shell startup re-orders <code>PATH</code> (e.g. Homebrew), seamless may not take effect. <b>Wrapper</b> always works: run <code>claude-&lt;account&gt;</code> (needs <code>~/.local/bin</code> on your PATH).</p>
+        <p class="hint"><b>Seamless</b> auto-opens a Claude terminal on the right account when the project opens — approve <b>“Allow automatic tasks”</b> in the IDE the first time. Only paths are written to <code>.vscode</code>; the token stays in your Keychain. For terminals you open yourself, if your shell re-orders <code>PATH</code> (e.g. Homebrew) plain <code>claude</code> may miss it — use <b>Wrapper</b> (<code>claude-&lt;account&gt;</code>, needs <code>~/.local/bin</code> on PATH).</p>
         <div id="ide-status" class="hint"></div>
         <div class="modal-actions">
           <button id="ide-cancel" class="btn">Cancel</button>

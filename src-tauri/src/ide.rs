@@ -77,6 +77,33 @@ pub fn merge_vscode_settings(existing: &str, bin_dir: &str, config_dir: &str) ->
     serde_json::to_string_pretty(&root).map_err(|e| e.to_string())
 }
 
+/// Merge a `folderOpen` task into an existing `.vscode/tasks.json` (preserving any
+/// other tasks). Upserts by `label`. `command` is run as a process (not through a
+/// shell) — pass the ABSOLUTE path to the profile's `claude` shim so it resolves
+/// regardless of the login shell's PATH, and reveals a dedicated focused terminal.
+pub fn merge_vscode_tasks(existing: &str, label: &str, command: &str) -> Result<String, String> {
+    use serde_json::{json, Value};
+    let mut root: Value = if existing.trim().is_empty() {
+        json!({ "version": "2.0.0", "tasks": [] })
+    } else {
+        serde_json::from_str(existing).map_err(|e| format!("existing .vscode/tasks.json is not valid JSON: {e}"))?
+    };
+    let obj = root.as_object_mut().ok_or("tasks.json root is not an object")?;
+    obj.entry("version".to_string()).or_insert_with(|| Value::String("2.0.0".into()));
+    let tasks = obj.entry("tasks".to_string()).or_insert_with(|| Value::Array(vec![]));
+    let arr = tasks.as_array_mut().ok_or("tasks.json 'tasks' is not an array")?;
+    arr.retain(|t| t.get("label").and_then(|l| l.as_str()) != Some(label)); // upsert by label
+    arr.push(json!({
+        "label": label,
+        "type": "process",
+        "command": command,
+        "presentation": { "reveal": "always", "panel": "dedicated", "focus": true, "clear": false },
+        "runOptions": { "runOn": "folderOpen" },
+        "problemMatcher": []
+    }));
+    serde_json::to_string_pretty(&root).map_err(|e| e.to_string())
+}
+
 #[cfg(target_os = "macos")]
 mod imp {
     use super::*;
@@ -218,6 +245,15 @@ pub fn open_in_ide(account: &str, ide_id: &str, project_path: &str, mode: &str) 
         let existing = std::fs::read_to_string(&sp).unwrap_or_default();
         let merged = merge_vscode_settings(&existing, &bin.display().to_string(), &cfg.display().to_string())?;
         std::fs::write(&sp, merged).map_err(|e| e.to_string())?;
+
+        // Auto-open a Claude terminal on folder-open, running the shim by ABSOLUTE
+        // path so the right account is used regardless of the login shell's PATH.
+        let tp = vscode.join("tasks.json");
+        let et = std::fs::read_to_string(&tp).unwrap_or_default();
+        let label = format!("Claude Code — {account}");
+        let shim = bin.join("claude");
+        let tasks = merge_vscode_tasks(&et, &label, &shim.display().to_string())?;
+        std::fs::write(&tp, tasks).map_err(|e| e.to_string())?;
     }
 
     // Open the folder (VS Code-family CLIs reuse a running instance; workspace
@@ -329,6 +365,35 @@ mod tests {
     fn workspace_id_is_stable() {
         assert_eq!(workspace_id("cursor", "work", "/p"), workspace_id("cursor", "work", "/p"));
         assert_ne!(workspace_id("cursor", "work", "/p"), workspace_id("vscode", "work", "/p"));
+    }
+
+    #[test]
+    fn tasks_merge_creates_folderopen_task() {
+        let out = merge_vscode_tasks("", "Claude Code — Work", "/cfg/work/bin/claude").unwrap();
+        let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(v["version"], "2.0.0");
+        let t = &v["tasks"][0];
+        assert_eq!(t["command"], "/cfg/work/bin/claude");
+        assert_eq!(t["runOptions"]["runOn"], "folderOpen");
+        assert_eq!(t["type"], "process");
+    }
+
+    #[test]
+    fn tasks_merge_upserts_and_preserves_others() {
+        let existing = r#"{"version":"2.0.0","tasks":[{"label":"build","type":"shell","command":"make"},{"label":"Claude Code — Work","command":"/old"}]}"#;
+        let out = merge_vscode_tasks(existing, "Claude Code — Work", "/new/claude").unwrap();
+        let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+        let arr = v["tasks"].as_array().unwrap();
+        assert_eq!(arr.len(), 2); // build preserved, our task upserted (not duplicated)
+        assert!(arr.iter().any(|t| t["label"] == "build" && t["command"] == "make"));
+        let ours: Vec<_> = arr.iter().filter(|t| t["label"] == "Claude Code — Work").collect();
+        assert_eq!(ours.len(), 1);
+        assert_eq!(ours[0]["command"], "/new/claude");
+    }
+
+    #[test]
+    fn tasks_merge_rejects_malformed() {
+        assert!(merge_vscode_tasks("{bad", "L", "/c").is_err());
     }
 
     #[test]
