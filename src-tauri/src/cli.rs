@@ -61,6 +61,16 @@ pub fn render_launcher(name: &str, config_dir: &str, claude_bin: &str) -> String
     )
 }
 
+/// The Keychain service name claude uses for a login stored under `config_dir`
+/// (namespaced by config-dir hash). Pure + testable — verified against a real
+/// profile this session (see test).
+pub fn login_keychain_service_for_dir(config_dir: &str) -> String {
+    use sha2::{Digest, Sha256};
+    let h = Sha256::digest(config_dir.as_bytes());
+    let hex: String = h.iter().take(4).map(|b| format!("{b:02x}")).collect(); // first 8 hex chars
+    format!("Claude Code-credentials-{hex}")
+}
+
 /// Cheap extract of oauthAccount.emailAddress from a .claude.json body without
 /// pulling in serde_json.
 pub fn extract_email(json: &str) -> Option<String> {
@@ -128,11 +138,7 @@ mod imp {
     /// delete. Default config dir would be un-suffixed, but profiles are always
     /// custom, so the hash suffix always applies.
     pub fn login_keychain_service(slug: &str) -> String {
-        use sha2::{Digest, Sha256};
-        let dir = config_dir(slug);
-        let h = Sha256::digest(dir.display().to_string().as_bytes());
-        let hex: String = h.iter().take(4).map(|b| format!("{b:02x}")).collect(); // first 8 hex chars
-        format!("Claude Code-credentials-{hex}")
+        super::login_keychain_service_for_dir(&config_dir(slug).display().to_string())
     }
 }
 
@@ -286,6 +292,16 @@ mod tests {
     fn sh_quote_escapes_single_quotes() {
         assert_eq!(sh_quote("/tmp/plain"), "'/tmp/plain'");
         assert_eq!(sh_quote("/Users/O'Brien/x"), "'/Users/O'\\''Brien/x'");
+    }
+
+    #[test]
+    fn keychain_service_matches_claude_derivation() {
+        // Verified empirically: real /login in this dir created Keychain item
+        // "Claude Code-credentials-5f560a22".
+        assert_eq!(
+            login_keychain_service_for_dir("/Users/amoryzenith/Library/Application Support/ClaudeProfilesCLI/proto1"),
+            "Claude Code-credentials-5f560a22"
+        );
     }
 
     #[test]
