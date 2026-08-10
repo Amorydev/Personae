@@ -189,6 +189,23 @@ mod imp {
         fs::set_permissions(&lp, perm).map_err(|e| e.to_string())
     }
 
+    /// Mark this profile's config dir as onboarded so interactive `claude` skips
+    /// the first-run login/onboarding menu (it authenticates via the injected
+    /// CLAUDE_CODE_OAUTH_TOKEN / ANTHROPIC_API_KEY instead). Best-effort; merges
+    /// into any existing .claude.json without clobbering other keys.
+    pub fn mark_onboarded(slug: &str) {
+        let cfg = config_dir(slug);
+        let f = cfg.join(".claude.json");
+        let mut v: serde_json::Value = fs::read_to_string(&f).ok()
+            .and_then(|s| serde_json::from_str(&s).ok())
+            .unwrap_or_else(|| serde_json::json!({}));
+        if let Some(o) = v.as_object_mut() {
+            o.insert("hasCompletedOnboarding".to_string(), serde_json::Value::Bool(true));
+        }
+        let _ = fs::create_dir_all(&cfg);
+        if let Ok(s) = serde_json::to_string_pretty(&v) { let _ = fs::write(&f, s); }
+    }
+
 }
 
 // ---- public API (macOS) --------------------------------------------------
@@ -204,6 +221,7 @@ pub fn create(name: &str) -> Result<(), String> {
     if lp.exists() { return Err(format!("CLI profile already exists: {}", lp.display())); }
     std::fs::create_dir_all(imp::config_dir(&slug)).map_err(|e| e.to_string())?;
     imp::write_launcher(name, &slug)?;
+    imp::mark_onboarded(&slug); // skip interactive first-run onboarding for this profile
     Ok(())
 }
 
@@ -219,6 +237,7 @@ pub fn set_token(name: &str, token: &str) -> Result<(), String> {
     let cfg = imp::config_dir(&slug);
     let _ = std::fs::create_dir_all(&cfg);
     let _ = std::fs::write(cfg.join(".cli-auth-kind"), credential_kind(&clean));
+    imp::mark_onboarded(&slug);
     Ok(())
 }
 
@@ -257,6 +276,7 @@ pub fn capture_token(name: &str) -> Result<Option<String>, String> {
     imp::kc_set(&slug, &token)?;
     let cfg = imp::config_dir(&slug);
     let _ = std::fs::write(cfg.join(".cli-auth-kind"), credential_kind(&token));
+    imp::mark_onboarded(&slug);
     let _ = std::fs::remove_file(&cap); // never leave the token in a plaintext file
     Ok(Some(credential_kind(&token).to_string()))
 }
