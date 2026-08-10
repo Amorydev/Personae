@@ -146,6 +146,99 @@ mod imp {
     }
 }
 
+// Windows IDE engine — WRITTEN FROM WINDOWS DOCS + THE VS Code-family install
+// layouts, NOT YET RUN ON REAL WINDOWS. Isolation is by CLAUDE_CONFIG_DIR alone:
+// `cli_config_dir` MUST byte-match `cli::imp_win::config_dir` so IDE terminals
+// and CLI launcher terminals resolve the same account. Every process / dialog /
+// quoting assumption is marked TODO(verify); see docs/WINDOWS-TEST-PLAN.md.
+#[cfg(windows)]
+mod imp_win {
+    use super::*;
+    use std::fs;
+    use std::path::PathBuf;
+
+    fn appdata() -> PathBuf { PathBuf::from(std::env::var("APPDATA").unwrap_or_default()) }
+    fn localappdata() -> PathBuf { PathBuf::from(std::env::var("LOCALAPPDATA").unwrap_or_default()) }
+    fn programfiles() -> PathBuf { PathBuf::from(std::env::var("ProgramFiles").unwrap_or_default()) }
+
+    // MUST byte-match cli::imp_win::config_dir: %APPDATA%\ClaudeProfilesCLI\<slug>
+    pub fn cli_config_dir(slug: &str) -> PathBuf {
+        appdata().join("ClaudeProfilesCLI").join(slug)
+    }
+    // %APPDATA%\ClaudeProfilesCLI\workspaces.json
+    pub fn workspaces_file() -> PathBuf {
+        appdata().join("ClaudeProfilesCLI").join("workspaces.json")
+    }
+
+    /// Candidate VS Code-family IDEs: (id, display, PATH cli name for `where`,
+    /// [absolute launcher paths to probe]). First existing `.cmd`/`.exe` wins.
+    fn candidates() -> Vec<(&'static str, &'static str, &'static str, Vec<PathBuf>)> {
+        let lad = localappdata();
+        let pf = programfiles();
+        vec![
+            ("vscode", "Visual Studio Code", "code", vec![
+                lad.join(r"Programs\Microsoft VS Code\bin\code.cmd"),
+                pf.join(r"Microsoft VS Code\bin\code.cmd"),
+            ]),
+            ("cursor", "Cursor", "cursor", vec![
+                lad.join(r"Programs\cursor\resources\app\bin\cursor.cmd"),
+            ]),
+            ("windsurf", "Windsurf", "windsurf", vec![
+                lad.join(r"Programs\Windsurf\bin\windsurf.cmd"),
+            ]),
+            // TODO(verify): Antigravity's Windows install layout + CLI name are
+            // unconfirmed; probe the likely Electron `resources\app\bin` and `bin`
+            // shims under %LOCALAPPDATA%\Programs\.
+            ("antigravity", "Antigravity IDE", "antigravity", vec![
+                lad.join(r"Programs\Antigravity\resources\app\bin\antigravity.cmd"),
+                lad.join(r"Programs\Antigravity\bin\antigravity.cmd"),
+            ]),
+        ]
+    }
+
+    pub fn detect_ides() -> Vec<Ide> {
+        let mut ides = vec![];
+        for (id, name, cli, paths) in candidates() {
+            // TODO(verify): `where <cli>` resolves the IDE's `.cmd` shim on PATH.
+            let mut resolved: Option<String> = None;
+            let (ok, out) = crate::platform::run("where", &[cli]);
+            if ok {
+                for line in out.lines() {
+                    let pb = PathBuf::from(line.trim());
+                    if pb.is_file() { resolved = Some(pb.display().to_string()); break; }
+                }
+            }
+            // Then the candidate paths — first existing `.cmd`/`.exe` wins.
+            if resolved.is_none() {
+                if let Some(p) = paths.into_iter().find(|p| p.is_file()) {
+                    resolved = Some(p.display().to_string());
+                }
+            }
+            if let Some(cli_path) = resolved {
+                ides.push(Ide { id: id.into(), name: name.into(), cli_path });
+            }
+        }
+        ides
+    }
+
+    pub fn ide_cli(ide_id: &str) -> Option<String> {
+        detect_ides().into_iter().find(|i| i.id == ide_id).map(|i| i.cli_path)
+    }
+
+    pub fn load_workspaces() -> Vec<Workspace> {
+        match fs::read_to_string(workspaces_file()) {
+            Ok(s) => serde_json::from_str(&s).unwrap_or_default(),
+            Err(_) => vec![],
+        }
+    }
+    pub fn save_workspaces(list: &[Workspace]) -> Result<(), String> {
+        let f = workspaces_file();
+        if let Some(d) = f.parent() { fs::create_dir_all(d).map_err(|e| e.to_string())?; }
+        let s = serde_json::to_string_pretty(list).map_err(|e| e.to_string())?;
+        fs::write(&f, s).map_err(|e| e.to_string())
+    }
+}
+
 // ---- public API (macOS) --------------------------------------------------
 #[cfg(target_os = "macos")]
 pub fn list_ides() -> Vec<Ide> { imp::detect_ides() }
@@ -242,22 +335,129 @@ pub fn open_workspace(id: &str, now: u64) -> Result<(), String> {
     save_workspace(&w.account_slug, &w.account_name, &w.ide_id, &w.ide_name, &w.project_path, now)
 }
 
-// ---- non-macOS stubs -----------------------------------------------------
-#[cfg(not(target_os = "macos"))]
-const NOT_YET: &str = "IDE workspaces are macOS-only for now.";
-#[cfg(not(target_os = "macos"))]
+// ---- public API (Windows) ------------------------------------------------
+// Isolation is by CLAUDE_CONFIG_DIR alone (mirrors macOS). Every process /
+// dialog / quoting assumption below is marked TODO(verify) for the real-Windows
+// pass; see docs/WINDOWS-TEST-PLAN.md.
+#[cfg(windows)]
+pub fn list_ides() -> Vec<Ide> { imp_win::detect_ides() }
+
+/// Native folder picker via PowerShell's WinForms FolderBrowserDialog. Returns
+/// None if the user cancels (the dialog prints nothing on Cancel).
+#[cfg(windows)]
+pub fn pick_folder() -> Result<Option<String>, String> {
+    // -STA is required for WinForms dialogs. The script loads System.Windows.Forms,
+    // shows the dialog, and prints SelectedPath only on OK (Cancel => no output).
+    // TODO(verify): the dialog appears, OK prints the chosen path, and Cancel
+    // yields empty output (so cancel => Ok(None), never an error).
+    let script = "Add-Type -AssemblyName System.Windows.Forms; \
+                  $f=New-Object System.Windows.Forms.FolderBrowserDialog; \
+                  if($f.ShowDialog() -eq 'OK'){Write-Output $f.SelectedPath}";
+    let (ok, out) = crate::platform::run(
+        "powershell",
+        &["-STA", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script],
+    );
+    let s = out.trim().to_string();
+    if ok && !s.is_empty() { Ok(Some(s)) }
+    else if s.is_empty() { Ok(None) } // OK-with-nothing or Cancel
+    else { Err(s) }
+}
+
+/// Open `project_path` in the given IDE with `account` active in its integrated
+/// terminal: writes `.vscode/settings.json` (CLAUDE_CONFIG_DIR under the Windows
+/// terminal-env key) and `.vscode/tasks.json` (a folderOpen SHELL task that
+/// auto-opens a Claude terminal on this account), then launches the IDE at the
+/// folder.
+#[cfg(windows)]
+pub fn open_in_ide(account: &str, ide_id: &str, project_path: &str) -> Result<(), String> {
+    use crate::platform::slugify;
+    let slug = slugify(account);
+    if slug.is_empty() { return Err("Invalid account name.".into()); }
+    let proj = std::path::PathBuf::from(project_path);
+    if !proj.is_dir() { return Err(format!("Not a folder: {project_path}")); }
+    let cli = imp_win::ide_cli(ide_id).ok_or_else(|| format!("IDE not found: {ide_id}"))?;
+    let cfg = imp_win::cli_config_dir(&slug);
+    let claude = crate::cli::imp_claude_bin_string();
+    // If already logged in, skip the first-run menu so the IDE terminal goes
+    // straight in on the account (auth login doesn't set this flag itself).
+    crate::cli::ensure_onboarded(account);
+
+    let vscode = proj.join(".vscode");
+    std::fs::create_dir_all(&vscode).map_err(|e| e.to_string())?;
+    let sp = vscode.join("settings.json");
+    let merged = merge_vscode_settings(&std::fs::read_to_string(&sp).unwrap_or_default(), &cfg.display().to_string(), "terminal.integrated.env.windows")?;
+    std::fs::write(&sp, merged).map_err(|e| e.to_string())?;
+
+    let tp = vscode.join("tasks.json");
+    let label = format!("Claude Code — {account}");
+    // A `.cmd` shim launches more reliably as a "shell" task than a "process".
+    let tasks = merge_vscode_tasks(&std::fs::read_to_string(&tp).unwrap_or_default(), &label, &claude, &cfg.display().to_string(), "shell")?;
+    std::fs::write(&tp, tasks).map_err(|e| e.to_string())?;
+
+    // A `.cmd` cannot be spawned directly by std::process::Command, so open the
+    // folder through `cmd /C`. TODO(verify): `cmd /C <cli.cmd> <path>` opens the
+    // folder and quoting survives paths with spaces.
+    let (ok, e) = crate::platform::run("cmd", &["/C", &cli, project_path]);
+    if ok { Ok(()) } else { Err(e) }
+}
+
+#[cfg(windows)]
+pub fn list_workspaces() -> Vec<Workspace> {
+    let mut w = imp_win::load_workspaces();
+    w.sort_by(|a, b| b.last_opened.cmp(&a.last_opened));
+    w
+}
+
+#[cfg(windows)]
+pub fn save_workspace(account_slug: &str, account_name: &str, ide_id: &str, ide_name: &str,
+                      project_path: &str, now: u64) -> Result<(), String> {
+    let id = workspace_id(ide_id, account_slug, project_path);
+    let mut list = imp_win::load_workspaces();
+    if let Some(w) = list.iter_mut().find(|w| w.id == id) {
+        w.last_opened = Some(now);
+    } else {
+        list.push(Workspace {
+            id, account_slug: account_slug.into(), account_name: account_name.into(),
+            ide_id: ide_id.into(), ide_name: ide_name.into(), project_path: project_path.into(),
+            created: Some(now), last_opened: Some(now),
+        });
+    }
+    imp_win::save_workspaces(&list)
+}
+
+#[cfg(windows)]
+pub fn delete_workspace(id: &str) -> Result<(), String> {
+    let mut list = imp_win::load_workspaces();
+    list.retain(|w| w.id != id);
+    imp_win::save_workspaces(&list)
+}
+
+/// Open a saved workspace by id (re-applies activation + launches), stamping
+/// last_opened with `now`.
+#[cfg(windows)]
+pub fn open_workspace(id: &str, now: u64) -> Result<(), String> {
+    let list = imp_win::load_workspaces();
+    let w = list.into_iter().find(|w| w.id == id).ok_or("No such workspace")?;
+    open_in_ide(&w.account_name, &w.ide_id, &w.project_path)?;
+    save_workspace(&w.account_slug, &w.account_name, &w.ide_id, &w.ide_name, &w.project_path, now)
+}
+
+// ---- non-macOS/Windows stubs ---------------------------------------------
+#[cfg(not(any(target_os = "macos", windows)))]
+const NOT_YET: &str = "IDE workspaces are macOS/Windows-only for now.";
+#[cfg(not(any(target_os = "macos", windows)))]
 pub fn list_ides() -> Vec<Ide> { vec![] }
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(any(target_os = "macos", windows)))]
 pub fn pick_folder() -> Result<Option<String>, String> { Err(NOT_YET.into()) }
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(any(target_os = "macos", windows)))]
 pub fn open_in_ide(_a: &str, _i: &str, _p: &str) -> Result<(), String> { Err(NOT_YET.into()) }
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(any(target_os = "macos", windows)))]
 pub fn list_workspaces() -> Vec<Workspace> { vec![] }
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(any(target_os = "macos", windows)))]
 pub fn save_workspace(_a: &str, _b: &str, _c: &str, _d: &str, _e: &str, _n: u64) -> Result<(), String> { Err(NOT_YET.into()) }
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(any(target_os = "macos", windows)))]
 pub fn delete_workspace(_id: &str) -> Result<(), String> { Err(NOT_YET.into()) }
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(any(target_os = "macos", windows)))]
 pub fn open_workspace(_id: &str, _n: u64) -> Result<(), String> { Err(NOT_YET.into()) }
 
 #[cfg(test)]
