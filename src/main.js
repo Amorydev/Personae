@@ -27,7 +27,7 @@ const MOCK_CLI = [
 
 const MOCK_WS = [
   { id: "cursorwork-cli/Users/you/Projects/demo", account_slug: "work-cli", account_name: "Work CLI",
-    ide_id: "cursor", ide_name: "Cursor", project_path: "/Users/you/Projects/demo", mode: "seamless",
+    ide_id: "cursor", ide_name: "Cursor", project_path: "/Users/you/Projects/demo",
     created: now()-3600, last_opened: now()-600 },
 ];
 
@@ -73,7 +73,7 @@ async function invoke(cmd, args) {
     case "list_workspaces": return structuredClone(MOCK_WS);
     case "save_workspace": { const id = `${args.ideId}${args.accountSlug}${args.projectPath}`;
       if (!MOCK_WS.some(w=>w.id===id)) MOCK_WS.push({ id, account_slug: args.accountSlug, account_name: args.accountName,
-        ide_id: args.ideId, ide_name: args.ideName, project_path: args.projectPath, mode: args.mode,
+        ide_id: args.ideId, ide_name: args.ideName, project_path: args.projectPath,
         created: args.now, last_opened: args.now }); return; }
     case "delete_workspace": { const i = MOCK_WS.findIndex(w=>w.id===args.id); if(i>=0) MOCK_WS.splice(i,1); return; }
     case "open_workspace": console.log("open_workspace", args.id); return;
@@ -528,12 +528,12 @@ async function doOpenIde() {
   const p = cliCurrent(); if (!p) return;
   if (!ideFolder) { $("#ide-status").textContent = "Choose a project folder first."; return; }
   const sel = $("#ide-select"), opt = sel.options[sel.selectedIndex];
-  const ide_id = sel.value, ide_name = opt.dataset.name, mode = "seamless";
+  const ide_id = sel.value, ide_name = opt.dataset.name;
   $("#ide-status").textContent = "Opening…";
   try {
-    await invoke("open_in_ide", { account: p.name, ideId: ide_id, projectPath: ideFolder, mode });
+    await invoke("open_in_ide", { account: p.name, ideId: ide_id, projectPath: ideFolder });
     await invoke("save_workspace", { accountSlug: p.slug, accountName: p.name, ideId: ide_id,
-      ideName: ide_name, projectPath: ideFolder, mode, now: now() });
+      ideName: ide_name, projectPath: ideFolder, now: now() });
   } catch (e) { $("#ide-status").textContent = String(e); return; }
   $("#ide-modal").classList.add("hidden");
   await reloadWorkspaces();
@@ -549,7 +549,7 @@ async function reloadWorkspaces() {
     const sub = document.createElement("span"); sub.className = "badge";
     sub.textContent = w.project_path.split("/").pop() || w.project_path;
     li.appendChild(nm); li.appendChild(sub);
-    li.title = `${w.project_path} (${w.mode})`;
+    li.title = w.project_path;
     li.onclick = async () => {
       try { await invoke("open_workspace", { id: w.id, now: now() }); }
       catch (e) { alert(String(e)); }

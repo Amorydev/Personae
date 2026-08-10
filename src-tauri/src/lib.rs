@@ -76,8 +76,8 @@ fn list_ides() -> Vec<ide::Ide> { ide::list_ides() }
 fn pick_folder() -> Result<Option<String>, String> { ide::pick_folder() }
 
 #[tauri::command]
-fn open_in_ide(account: String, ide_id: String, project_path: String, mode: String) -> Result<(), String> {
-    ide::open_in_ide(&account, &ide_id, &project_path, &mode)
+fn open_in_ide(account: String, ide_id: String, project_path: String) -> Result<(), String> {
+    ide::open_in_ide(&account, &ide_id, &project_path)
 }
 
 #[tauri::command]
@@ -85,8 +85,8 @@ fn list_workspaces() -> Vec<ide::Workspace> { ide::list_workspaces() }
 
 #[tauri::command]
 fn save_workspace(account_slug: String, account_name: String, ide_id: String, ide_name: String,
-                  project_path: String, mode: String, now: u64) -> Result<(), String> {
-    ide::save_workspace(&account_slug, &account_name, &ide_id, &ide_name, &project_path, &mode, now)
+                  project_path: String, now: u64) -> Result<(), String> {
+    ide::save_workspace(&account_slug, &account_name, &ide_id, &ide_name, &project_path, now)
 }
 
 #[tauri::command]

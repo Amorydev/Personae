@@ -21,7 +21,6 @@ pub struct Workspace {
     pub ide_id: String,
     pub ide_name: String,
     pub project_path: String,
-    pub mode: String,         // "seamless" | "wrapper"
     pub created: Option<u64>,
     pub last_opened: Option<u64>,
 }
@@ -166,7 +165,7 @@ pub fn pick_folder() -> Result<Option<String>, String> {
 /// (workspaces store a `mode`) but no longer changes behavior — there is only
 /// one mode now.
 #[cfg(target_os = "macos")]
-pub fn open_in_ide(account: &str, ide_id: &str, project_path: &str, _mode: &str) -> Result<(), String> {
+pub fn open_in_ide(account: &str, ide_id: &str, project_path: &str) -> Result<(), String> {
     use crate::platform::slugify;
     let slug = slugify(account);
     if slug.is_empty() { return Err("Invalid account name.".into()); }
@@ -205,16 +204,16 @@ pub fn list_workspaces() -> Vec<Workspace> {
 
 #[cfg(target_os = "macos")]
 pub fn save_workspace(account_slug: &str, account_name: &str, ide_id: &str, ide_name: &str,
-                      project_path: &str, mode: &str, now: u64) -> Result<(), String> {
+                      project_path: &str, now: u64) -> Result<(), String> {
     let id = workspace_id(ide_id, account_slug, project_path);
     let mut list = imp::load_workspaces();
     if let Some(w) = list.iter_mut().find(|w| w.id == id) {
-        w.last_opened = Some(now); w.mode = mode.to_string();
+        w.last_opened = Some(now);
     } else {
         list.push(Workspace {
             id, account_slug: account_slug.into(), account_name: account_name.into(),
             ide_id: ide_id.into(), ide_name: ide_name.into(), project_path: project_path.into(),
-            mode: mode.into(), created: Some(now), last_opened: Some(now),
+            created: Some(now), last_opened: Some(now),
         });
     }
     imp::save_workspaces(&list)
@@ -233,8 +232,8 @@ pub fn delete_workspace(id: &str) -> Result<(), String> {
 pub fn open_workspace(id: &str, now: u64) -> Result<(), String> {
     let list = imp::load_workspaces();
     let w = list.into_iter().find(|w| w.id == id).ok_or("No such workspace")?;
-    open_in_ide(&w.account_name, &w.ide_id, &w.project_path, &w.mode)?;
-    save_workspace(&w.account_slug, &w.account_name, &w.ide_id, &w.ide_name, &w.project_path, &w.mode, now)
+    open_in_ide(&w.account_name, &w.ide_id, &w.project_path)?;
+    save_workspace(&w.account_slug, &w.account_name, &w.ide_id, &w.ide_name, &w.project_path, now)
 }
 
 // ---- non-macOS stubs -----------------------------------------------------
@@ -245,11 +244,11 @@ pub fn list_ides() -> Vec<Ide> { vec![] }
 #[cfg(not(target_os = "macos"))]
 pub fn pick_folder() -> Result<Option<String>, String> { Err(NOT_YET.into()) }
 #[cfg(not(target_os = "macos"))]
-pub fn open_in_ide(_a: &str, _i: &str, _p: &str, _m: &str) -> Result<(), String> { Err(NOT_YET.into()) }
+pub fn open_in_ide(_a: &str, _i: &str, _p: &str) -> Result<(), String> { Err(NOT_YET.into()) }
 #[cfg(not(target_os = "macos"))]
 pub fn list_workspaces() -> Vec<Workspace> { vec![] }
 #[cfg(not(target_os = "macos"))]
-pub fn save_workspace(_a: &str, _b: &str, _c: &str, _d: &str, _e: &str, _f: &str, _n: u64) -> Result<(), String> { Err(NOT_YET.into()) }
+pub fn save_workspace(_a: &str, _b: &str, _c: &str, _d: &str, _e: &str, _n: u64) -> Result<(), String> { Err(NOT_YET.into()) }
 #[cfg(not(target_os = "macos"))]
 pub fn delete_workspace(_id: &str) -> Result<(), String> { Err(NOT_YET.into()) }
 #[cfg(not(target_os = "macos"))]

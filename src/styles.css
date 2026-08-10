@@ -268,15 +268,9 @@ kbd {
 }
 .mini:hover { background: var(--panel); color: var(--warn); }
 
-/* ---------- modal hint text + textarea (set-token modal) ---------- */
+/* ---------- modal hint text ---------- */
 .modal-card .hint { font-size: 13px; color: var(--text-dim); line-height: 1.5; margin: 0; }
 .modal-card .hint code { background: #1a1a20; padding: 1px 5px; border-radius: 4px; font-family: var(--mono); font-size: 12px; }
-.modal-card textarea {
-  all: unset; background: #0e0e12; border: 1px solid var(--border); border-radius: var(--r);
-  padding: 10px 12px; color: var(--text); font-size: 13px; font-family: var(--mono);
-  resize: vertical; box-sizing: border-box; white-space: pre-wrap;
-}
-.modal-card textarea:focus { border-color: color-mix(in srgb, var(--accent) 60%, var(--border)); }
 .primary:disabled { opacity: .5; cursor: not-allowed; filter: none; }
 
 /* ---------- Open-in-IDE modal path rows (same look as .field .path) ---------- */
