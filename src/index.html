@@ -84,7 +84,7 @@
 
         <div id="cli-actionbar" class="actionbar hidden">
           <button id="cli-primary" class="primary"></button>
-          <button id="cli-settoken" class="btn">Set token</button>
+          <button id="cli-settoken" class="btn">Set credential</button>
           <div class="spacer"></div>
           <button id="cli-delete" class="danger">Delete</button>
         </div>
@@ -155,17 +155,18 @@
       </div>
     </div>
 
-    <!-- ================= set token modal ================= -->
+    <!-- ================= set credential modal ================= -->
     <div id="token-modal" class="modal hidden">
       <div class="modal-card">
-        <div class="modal-title">Set token</div>
-        <p class="hint">Run <code>claude setup-token</code>, log in to the account you want for this
-          profile, then paste the printed token (starts with <code>sk-ant-</code>) below.</p>
+        <div class="modal-title">Set credential</div>
+        <p class="hint"><b>Option 1 — Subscription</b> (Pro / Max / Team): run <code>claude setup-token</code>, log in to the account you want, then paste the <code>sk-ant-oat…</code> token.</p>
         <button id="token-open" class="btn">Open setup-token in Terminal…</button>
-        <textarea id="token-input" rows="4" placeholder="Paste the token or the whole setup-token output"></textarea>
+        <p class="hint"><b>Option 2 — Console API</b> (usage-based billing): create an API key, then paste the <code>sk-ant-api…</code> key.</p>
+        <button id="token-console" class="btn">Open Anthropic Console…</button>
+        <textarea id="token-input" rows="3" placeholder="Paste sk-ant-oat… (subscription) or sk-ant-api… (Console API)"></textarea>
         <div class="modal-actions">
           <button id="token-cancel" class="btn">Cancel</button>
-          <button id="token-save" class="primary">Save token</button>
+          <button id="token-save" class="primary">Save</button>
         </div>
       </div>
     </div>

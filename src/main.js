@@ -19,7 +19,7 @@ const MOCK = [
 const MOCK_CLI = [
   { name: "Work CLI", slug: "work-cli", config_dir: "/Users/you/Library/Application Support/ClaudeProfilesCLI/work-cli",
     launcher_path: "/Users/you/Applications/Claude Profiles CLI/Work CLI.command",
-    has_token: true, account_email: "work@corp.com", data_size: "12M", created: now() - 86400, last_active: now() - 300 },
+    has_token: true, account_email: "work@corp.com", auth_kind: "subscription", data_size: "12M", created: now() - 86400, last_active: now() - 300 },
 ];
 
 async function invoke(cmd, args) {
@@ -49,10 +49,10 @@ async function invoke(cmd, args) {
       const slug = args.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
       MOCK_CLI.push({ name: args.name, slug, config_dir: `/Users/you/Library/Application Support/ClaudeProfilesCLI/${slug}`,
         launcher_path: `/Users/you/Applications/Claude Profiles CLI/${args.name}.command`,
-        has_token: false, account_email: null, data_size: "0B", created: now(), last_active: now() });
+        has_token: false, account_email: null, auth_kind: null, data_size: "0B", created: now(), last_active: now() });
       return;
     }
-    case "set_cli_token": { const p = MOCK_CLI.find(m => m.name === args.name); if (p) { p.has_token = true; p.account_email = "you@example.com"; } return; }
+    case "set_cli_token": { const p = MOCK_CLI.find(m => m.name === args.name); if (p) { p.has_token = true; const api = String(args.token).startsWith("sk-ant-api"); p.auth_kind = api ? "console" : "subscription"; p.account_email = api ? null : "you@example.com"; } return; }
     case "open_cli_setup_token": console.log("setup-token", args.name); return;
     case "launch_cli_profile": console.log("launch cli", args.name); return;
     case "delete_cli_profile": { const i = MOCK_CLI.findIndex(m => m.name === args.name); if (i >= 0) MOCK_CLI.splice(i, 1); return; }
@@ -388,7 +388,7 @@ function renderCliList() {
     if (!p.has_token) {
       const w = document.createElement("span");
       w.className = "badge warn";
-      w.textContent = "no token";
+      w.textContent = "no credential";
       li.appendChild(w);
     }
     li.onclick = () => { cliSelected = p.slug; renderCliList(); renderCliDetail(); };
@@ -409,17 +409,21 @@ function renderCliDetail() {
   if (!p) {
     bar.classList.add("hidden");
     body.innerHTML = `<div class="empty"><div class="big">No CLI account</div>
-      <div class="small">Create one, then set its token from <code>claude setup-token</code>.</div></div>`;
+      <div class="small">Create one, then set its credential — a subscription token (<code>claude setup-token</code>) or a Console API key.</div></div>`;
     return;
   }
   bar.classList.remove("hidden");
+  const kind = p.auth_kind === "console" ? "Console API" : p.auth_kind === "subscription" ? "Subscription" : "";
+  const sub = p.account_email ? escapeHtml(p.account_email)
+    : (p.has_token ? (kind ? `${kind} credential set` : "Credential set")
+                   : '<span style="color:var(--warn)">No credential — set one to use this account</span>');
   body.innerHTML = `
     <div class="hero"><div class="meta">
       <div class="name">${escapeHtml(p.name)}</div>
-      <div class="sub">${p.account_email ? escapeHtml(p.account_email) : (p.has_token ? "Token set" : '<span style="color:var(--warn)">No token — set one to use this account</span>')}</div>
+      <div class="sub">${sub}</div>
     </div></div>
     <div class="stats">
-      <div class="stat"><div class="k">Token</div><div class="v">${p.has_token ? "✓ stored" : "— missing"}</div></div>
+      <div class="stat"><div class="k">Auth</div><div class="v">${p.has_token ? (kind || "✓ set") : "— none"}</div></div>
       <div class="stat"><div class="k">Storage</div><div class="v">${prettySize(p.data_size)}</div></div>
       <div class="stat"><div class="k">Last active</div><div class="v">${relTime(p.last_active)}</div></div>
     </div>`;
@@ -515,6 +519,7 @@ window.addEventListener("DOMContentLoaded", () => {
   $("#cli-del-cancel").onclick = closeModals;
   $("#cli-del-go").onclick = doCliDelete;
   $("#token-open").onclick = () => { const p = cliCurrent(); if (p) invoke("open_cli_setup_token", { name: p.name }); };
+  $("#token-console").onclick = () => invoke("open_url", { url: "https://console.anthropic.com/settings/keys" });
   $("#token-cancel").onclick = () => { $("#token-modal").classList.add("hidden"); tokenTarget = null; };
   $("#token-save").onclick = doTokenSave;
   // #token-modal already gets outside-click-to-close from the generic ".modal" loop below.
