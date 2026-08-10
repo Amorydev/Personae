@@ -130,6 +130,31 @@
       </div>
     </div>
 
+    <!-- ================= CLI create modal ================= -->
+    <div id="cli-create-modal" class="modal hidden">
+      <div class="modal-card">
+        <div class="modal-title">New CLI account</div>
+        <label class="k" for="cli-new-name">Name</label>
+        <input id="cli-new-name" class="text" placeholder="e.g. Work, Personal, Client" autocomplete="off" spellcheck="false" />
+        <div class="modal-actions">
+          <button id="cli-create-cancel" class="btn">Cancel</button>
+          <button id="cli-create-go" class="primary">Create account</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ================= CLI delete modal ================= -->
+    <div id="cli-del-modal" class="modal hidden">
+      <div class="modal-card">
+        <div id="cli-del-title" class="modal-title"></div>
+        <p class="hint">This removes the launcher, its stored token, and its CLI config directory. This cannot be undone.</p>
+        <div class="modal-actions">
+          <button id="cli-del-cancel" class="btn">Cancel</button>
+          <button id="cli-del-go" class="danger">Delete account</button>
+        </div>
+      </div>
+    </div>
+
     <!-- ================= set token modal ================= -->
     <div id="token-modal" class="modal hidden">
       <div class="modal-card">

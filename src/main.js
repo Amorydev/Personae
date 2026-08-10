@@ -310,6 +310,8 @@ function closeModals() {
   $("#edit-modal").classList.add("hidden");
   $("#del-modal").classList.add("hidden");
   $("#token-modal")?.classList.add("hidden");
+  $("#cli-create-modal")?.classList.add("hidden");
+  $("#cli-del-modal")?.classList.add("hidden");
   pendingDelete = null;
   tokenTarget = null;
 }
@@ -334,6 +336,7 @@ document.addEventListener("keydown", (e) => {
   if (e.key === "Escape") { if (anyModalOpen()) closeModals(); return; }
   if (anyModalOpen()) {
     if (e.key === "Enter" && !$("#create-modal").classList.contains("hidden")) { e.preventDefault(); doCreate(); }
+    if (e.key === "Enter" && !$("#cli-create-modal").classList.contains("hidden")) { e.preventDefault(); doCliCreate(); }
     return;
   }
   if (view !== "desktop") return;   // CLI view uses buttons; don't drive the hidden Desktop model
@@ -442,13 +445,19 @@ async function doCliLaunch(p) {
   catch (e) { alert(String(e)); }
 }
 
+function openCliCreate() {
+  $("#cli-new-name").value = "";
+  $("#cli-create-modal").classList.remove("hidden");
+  setTimeout(() => $("#cli-new-name").focus(), 30);
+}
 async function doCliCreate() {
-  const name = prompt("Name this CLI account (e.g. Work, Personal):");
-  if (!name || !name.trim()) return;
-  try { await invoke("create_cli_profile", { name: name.trim() }); }
+  const name = $("#cli-new-name").value.trim();
+  if (!name) return;
+  try { await invoke("create_cli_profile", { name }); }
   catch (e) { alert(String(e)); return; }
+  $("#cli-create-modal").classList.add("hidden");
   await reloadCli();
-  const made = cliProfiles.find((p) => p.name === name.trim());
+  const made = cliProfiles.find((p) => p.name === name);
   if (made) { cliSelected = made.slug; renderCliList(); renderCliDetail(); openTokenModal(); }
 }
 
@@ -471,9 +480,14 @@ async function doTokenSave() {
   await reloadCli();
 }
 
+function openCliDelete() {
+  const p = cliCurrent(); if (!p) return;
+  $("#cli-del-title").textContent = `Delete “${p.name}”?`;
+  $("#cli-del-modal").classList.remove("hidden");
+}
 async function doCliDelete() {
   const p = cliCurrent(); if (!p) return;
-  if (!confirm(`Delete CLI account "${p.name}"? (also removes its token + config)`)) return;
+  $("#cli-del-modal").classList.add("hidden");
   try { await invoke("delete_cli_profile", { name: p.name, purge: true }); }
   catch (e) { alert(String(e)); return; }
   await reloadCli();
@@ -493,9 +507,13 @@ window.addEventListener("DOMContentLoaded", () => {
   $("#repair-link").onclick = () => invoke("repair_profiles").then(() => reload());
   $("#feedback").onclick = () => invoke("open_url", { url: "mailto:amory.dev@gmail.com?subject=Personae%20feedback" });
   document.querySelectorAll(".segmented .seg").forEach((b) => b.onclick = () => setView(b.dataset.view));
-  $("#cli-new-side").onclick = doCliCreate;
+  $("#cli-new-side").onclick = openCliCreate;
+  $("#cli-create-cancel").onclick = closeModals;
+  $("#cli-create-go").onclick = doCliCreate;
   $("#cli-settoken").onclick = openTokenModal;
-  $("#cli-delete").onclick = doCliDelete;
+  $("#cli-delete").onclick = openCliDelete;
+  $("#cli-del-cancel").onclick = closeModals;
+  $("#cli-del-go").onclick = doCliDelete;
   $("#token-open").onclick = () => { const p = cliCurrent(); if (p) invoke("open_cli_setup_token", { name: p.name }); };
   $("#token-cancel").onclick = () => { $("#token-modal").classList.add("hidden"); tokenTarget = null; };
   $("#token-save").onclick = doTokenSave;
