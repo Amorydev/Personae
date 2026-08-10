@@ -61,13 +61,7 @@ fn list_cli_profiles() -> Vec<cli::CliProfile> { cli::list() }
 fn create_cli_profile(name: String) -> Result<(), String> { cli::create(&name) }
 
 #[tauri::command]
-fn set_cli_token(name: String, token: String) -> Result<(), String> { cli::set_token(&name, &token) }
-
-#[tauri::command]
-fn open_cli_setup_token(name: String) -> Result<(), String> { cli::open_setup_token(&name) }
-
-#[tauri::command]
-fn capture_cli_token(name: String) -> Result<Option<String>, String> { cli::capture_token(&name) }
+fn login_cli_profile(name: String) -> Result<(), String> { cli::login(&name) }
 
 #[tauri::command]
 fn launch_cli_profile(name: String) -> Result<(), String> { cli::launch(&name) }
@@ -109,8 +103,8 @@ pub fn run() {
             claude_found, list_profiles, create_profile,
             launch_profile, quit_profile, delete_profile, repair_profiles,
             set_profile_color, reveal_path, open_url,
-            cli_available, list_cli_profiles, create_cli_profile, set_cli_token,
-            open_cli_setup_token, capture_cli_token, launch_cli_profile, delete_cli_profile,
+            cli_available, list_cli_profiles, create_cli_profile, login_cli_profile,
+            launch_cli_profile, delete_cli_profile,
             list_ides, pick_folder, open_in_ide,
             list_workspaces, save_workspace, delete_workspace, open_workspace
         ])
