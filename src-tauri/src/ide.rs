@@ -357,10 +357,11 @@ pub fn pick_folder() -> Result<Option<String>, String> {
         "powershell",
         &["-STA", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script],
     );
-    let s = out.trim().to_string();
-    if ok && !s.is_empty() { Ok(Some(s)) }
-    else if s.is_empty() { Ok(None) } // OK-with-nothing or Cancel
-    else { Err(s) }
+    // A non-zero exit is a genuine failure — don't let it masquerade as a cancel.
+    if !ok { return Err(if out.trim().is_empty() { "Folder picker failed to run.".into() } else { out.trim().to_string() }); }
+    // Exit 0: Cancel writes nothing (=> None); OK prints the chosen path.
+    let s = out.trim();
+    if s.is_empty() { Ok(None) } else { Ok(Some(s.to_string())) }
 }
 
 /// Open `project_path` in the given IDE with `account` active in its integrated
@@ -395,10 +396,24 @@ pub fn open_in_ide(account: &str, ide_id: &str, project_path: &str) -> Result<()
     std::fs::write(&tp, tasks).map_err(|e| e.to_string())?;
 
     // A `.cmd` cannot be spawned directly by std::process::Command, so open the
-    // folder through `cmd /C`. TODO(verify): `cmd /C <cli.cmd> <path>` opens the
-    // folder and quoting survives paths with spaces.
-    let (ok, e) = crate::platform::run("cmd", &["/C", &cli, project_path]);
-    if ok { Ok(()) } else { Err(e) }
+    // folder through `cmd /C`. Both the IDE shim (the DEFAULT VS Code install is
+    // "C:\Program Files\Microsoft VS Code\bin\code.cmd") and the project path can
+    // contain spaces; letting std apply its per-arg MSVC quoting collides with
+    // cmd's "strip the first and last quote" rule and mangles the command. So we
+    // build the command line by hand with cmd's outer-quote idiom
+    // — `cmd /C ""<exe>" "<arg>""` (the outer pair makes cmd run the middle
+    // verbatim) — and pass it via raw_arg. CREATE_NO_WINDOW keeps this spawn from
+    // flashing a console. TODO(verify): confirm the outer-quote idiom on a real
+    // Windows box with a spaced project path under the default VS Code install.
+    use std::os::windows::process::CommandExt;
+    let line = format!("\"\"{}\" \"{}\"\"", cli, project_path);
+    let status = std::process::Command::new("cmd")
+        .raw_arg("/C")
+        .raw_arg(&line)
+        .creation_flags(0x08000000) // CREATE_NO_WINDOW
+        .status()
+        .map_err(|e| e.to_string())?;
+    if status.success() { Ok(()) } else { Err(format!("IDE launch failed (exit {status})")) }
 }
 
 #[cfg(windows)]
