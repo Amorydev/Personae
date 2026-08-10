@@ -20,12 +20,6 @@ pub struct CliProfile {
     pub last_active: Option<u64>,
 }
 
-// Retained only because `ide.rs`'s pre-v2 shim code (`cred_export`) still
-// references it; that machinery is deleted in the IDE-integration rewrite
-// (which also removes the last use of this constant), at which point this
-// should go too.
-pub const KEYCHAIN_PREFIX: &str = "com.claudeprofiles.cli";
-
 /// Escape a string for safe interpolation inside a double-quoted bash string.
 pub fn sh_dq_escape(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
