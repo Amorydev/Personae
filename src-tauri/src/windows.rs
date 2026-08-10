@@ -64,32 +64,37 @@ impl Win {
         self.start_menu().join(format!("{name}.lnk"))
     }
 
-    /// Locate Claude.exe. Order favours update-stable paths first:
-    ///   1. CLAUDE_APP override
-    ///   2. Squirrel versionless stub  %LOCALAPPDATA%\AnthropicClaude\Claude.exe
-    ///   3. MSIX PATH alias            %LOCALAPPDATA%\Microsoft\WindowsApps\Claude.exe
-    ///   4. newest Squirrel            %LOCALAPPDATA%\AnthropicClaude\app-<ver>\Claude.exe
-    /// The versioned path (4) pins a version that disappears on update — `repair`
-    /// re-resolves and rewrites launchers to fix that (same story as macOS repair).
-    fn claude_exe(&self) -> Option<PathBuf> {
-        if let Ok(p) = std::env::var("CLAUDE_APP") {
-            let pb = PathBuf::from(p);
-            if pb.is_file() {
-                return Some(pb);
+    /// Root folders Claude may be installed under, across installer types and
+    /// per-user vs per-machine installs. Each is probed for a versionless stub
+    /// and for the newest `app-<ver>` (Squirrel) subfolder.
+    fn candidate_roots(&self) -> Vec<PathBuf> {
+        let lad = self.localappdata();
+        let mut roots = vec![
+            lad.join("AnthropicClaude"),          // classic Squirrel (per-user)
+            lad.join(r"Programs\AnthropicClaude"), // newer per-user Programs layout
+            lad.join(r"Programs\Claude"),
+            lad.join("Claude"),
+        ];
+        // Per-machine installs under Program Files (both bitnesses).
+        for var in ["ProgramFiles", "ProgramFiles(x86)", "ProgramW6432"] {
+            if let Ok(pf) = std::env::var(var) {
+                let pf = PathBuf::from(pf);
+                roots.push(pf.join("AnthropicClaude"));
+                roots.push(pf.join("Claude"));
             }
         }
-        let anthropic = self.localappdata().join("AnthropicClaude");
-        let stub = anthropic.join("Claude.exe");
+        roots
+    }
+
+    /// Find `Claude.exe` inside one root: prefer the versionless stub (survives
+    /// updates), else the highest-numbered `app-<ver>` (so 0.10 > 0.9).
+    fn exe_in_root(root: &PathBuf) -> Option<PathBuf> {
+        let stub = root.join("Claude.exe");
         if stub.is_file() {
             return Some(stub);
         }
-        let msix = self.localappdata().join(r"Microsoft\WindowsApps\Claude.exe");
-        if msix.is_file() {
-            return Some(msix);
-        }
-        if let Ok(rd) = fs::read_dir(&anthropic) {
-            // Pick the highest app-<ver> by numeric version (so 0.10 > 0.9).
-            let mut best: Option<(Vec<u32>, PathBuf)> = None;
+        let mut best: Option<(Vec<u32>, PathBuf)> = None;
+        if let Ok(rd) = fs::read_dir(root) {
             for e in rd.flatten() {
                 let p = e.path();
                 let fname = p.file_name().and_then(|s| s.to_str()).unwrap_or("");
@@ -108,11 +113,85 @@ impl Win {
                     }
                 }
             }
-            if let Some((_, exe)) = best {
-                return Some(exe);
+        }
+        best.map(|(_, exe)| exe)
+    }
+
+    /// Last-resort: ask Windows where Claude.exe is via the registry. The
+    /// standard "App Paths" key holds the full exe path installers register;
+    /// Uninstall\*.DisplayIcon is a secondary source. Read via `reg.exe` (no
+    /// extra crate); only reached when the filesystem probe finds nothing.
+    fn claude_from_registry() -> Option<PathBuf> {
+        let queries: [(&str, &str); 4] = [
+            (r"HKCU\Software\Microsoft\Windows\CurrentVersion\App Paths\Claude.exe", "/ve"),
+            (r"HKLM\Software\Microsoft\Windows\CurrentVersion\App Paths\Claude.exe", "/ve"),
+            (r"HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall\Claude", "DisplayIcon"),
+            (r"HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall\AnthropicClaude", "DisplayIcon"),
+        ];
+        for (key, val) in queries {
+            let args: Vec<&str> = if val == "/ve" {
+                vec!["query", key, "/ve"]
+            } else {
+                vec!["query", key, "/v", val]
+            };
+            let (_, out) = run("reg", &args);
+            if let Some(pb) = Self::parse_reg_path(&out) {
+                return Some(pb);
             }
         }
         None
+    }
+
+    /// Pull an existing `...\Claude.exe` out of `reg query` output. Handles paths
+    /// with spaces (parses after the `REG_SZ` type token) and a trailing `,<idx>`
+    /// icon index on DisplayIcon values.
+    fn parse_reg_path(out: &str) -> Option<PathBuf> {
+        for line in out.lines() {
+            if let Some(idx) = line.find("REG_SZ") {
+                let val = line[idx + "REG_SZ".len()..].trim();
+                // Strip a trailing icon index like ",0" (present on DisplayIcon).
+                let val = if val.to_ascii_lowercase().ends_with(".exe") {
+                    val
+                } else {
+                    val.rsplit_once(',').map(|(p, _)| p).unwrap_or(val).trim()
+                };
+                if val.to_ascii_lowercase().ends_with("claude.exe") {
+                    let pb = PathBuf::from(val);
+                    if pb.is_file() {
+                        return Some(pb);
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    /// Locate Claude.exe. Order favours explicit override, then update-stable
+    /// paths, then a registry fallback:
+    ///   1. CLAUDE_APP override
+    ///   2. MSIX PATH alias  %LOCALAPPDATA%\Microsoft\WindowsApps\Claude.exe
+    ///   3. any candidate root (LocalAppData / Programs / Program Files), each
+    ///      probed for the versionless stub then newest app-<ver>
+    ///   4. registry (App Paths / Uninstall DisplayIcon)
+    /// Versioned paths pin a version that disappears on update — `repair`
+    /// re-resolves and rewrites launchers to fix that (same story as macOS repair).
+    fn claude_exe(&self) -> Option<PathBuf> {
+        if let Ok(p) = std::env::var("CLAUDE_APP") {
+            let pb = PathBuf::from(p);
+            if pb.is_file() {
+                return Some(pb);
+            }
+        }
+        let msix = self.localappdata().join(r"Microsoft\WindowsApps\Claude.exe");
+        if msix.is_file() {
+            return Some(msix);
+        }
+        for root in self.candidate_roots() {
+            if let Some(exe) = Self::exe_in_root(&root) {
+                return Some(exe);
+            }
+        }
+        Self::claude_from_registry()
     }
 
     /// Write the two PS helpers next to the profiles; return their paths.

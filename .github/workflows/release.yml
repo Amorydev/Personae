@@ -39,6 +39,18 @@ jobs:
         with:
           args: ${{ matrix.args }}
 
+      # Lưu file cài đặt làm artifact — tải trực tiếp từ trang Actions để test,
+      # không phụ thuộc bước upload VPS bên dưới (chạy kể cả khi VPS lỗi).
+      - name: Upload build artifact (for testing)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: personae-${{ matrix.platform }}
+          path: |
+            src-tauri/target/**/release/bundle/**/*.dmg
+            src-tauri/target/**/release/bundle/**/*.exe
+          if-no-files-found: ignore
+
       # Upload file cài đặt lên VPS qua SSH (nguồn tải công khai, KHÔNG lộ GitHub).
       # Repo để private — người dùng tải qua https://claudemux.com/dl/latest/...
       - name: Upload installers to VPS
