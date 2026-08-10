@@ -14,6 +14,9 @@
 use crate::platform::*;
 use std::fs;
 use std::path::PathBuf;
+use std::sync::OnceLock;
+
+static CLAUDE_EXE_CACHE: OnceLock<Option<PathBuf>> = OnceLock::new();
 
 // Bundled PowerShell helpers (kept as inspectable files under scripts/win/,
 // embedded into the binary, and written out next to the profiles at runtime).
@@ -166,16 +169,61 @@ impl Win {
         None
     }
 
-    /// Locate Claude.exe. Order favours explicit override, then update-stable
-    /// paths, then a registry fallback:
-    ///   1. CLAUDE_APP override
-    ///   2. MSIX PATH alias  %LOCALAPPDATA%\Microsoft\WindowsApps\Claude.exe
-    ///   3. any candidate root (LocalAppData / Programs / Program Files), each
-    ///      probed for the versionless stub then newest app-<ver>
-    ///   4. registry (App Paths / Uninstall DisplayIcon)
-    /// Versioned paths pin a version that disappears on update — `repair`
-    /// re-resolves and rewrites launchers to fix that (same story as macOS repair).
+    /// Check running `Claude.exe` processes for executable path via PowerShell.
+    fn claude_from_running_process() -> Option<PathBuf> {
+        let ps = "(Get-Process Claude -ErrorAction SilentlyContinue).Path";
+        let (ok, out) = run(
+            "powershell",
+            &["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", ps],
+        );
+        if ok {
+            for line in out.lines() {
+                let trimmed = line.trim();
+                if !trimmed.is_empty() {
+                    let pb = PathBuf::from(trimmed);
+                    if pb.is_file() {
+                        return Some(pb);
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    /// Check Windows Store / AppX / MSIX package location via PowerShell.
+    fn claude_from_appx() -> Option<PathBuf> {
+        let ps = "(Get-AppxPackage *Claude* -ErrorAction SilentlyContinue).InstallLocation";
+        let (ok, out) = run(
+            "powershell",
+            &["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", ps],
+        );
+        if ok {
+            for line in out.lines() {
+                let trimmed = line.trim();
+                if !trimmed.is_empty() {
+                    let base = PathBuf::from(trimmed);
+                    let app_exe = base.join("app").join("Claude.exe");
+                    if app_exe.is_file() {
+                        return Some(app_exe);
+                    }
+                    let root_exe = base.join("Claude.exe");
+                    if root_exe.is_file() {
+                        return Some(root_exe);
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    /// Locate Claude.exe. Cached in memory using OnceLock so subsequent calls take 0ms.
     fn claude_exe(&self) -> Option<PathBuf> {
+        CLAUDE_EXE_CACHE
+            .get_or_init(|| self.resolve_claude_exe())
+            .clone()
+    }
+
+    fn resolve_claude_exe(&self) -> Option<PathBuf> {
         if let Ok(p) = std::env::var("CLAUDE_APP") {
             let pb = PathBuf::from(p);
             if pb.is_file() {
@@ -185,6 +233,12 @@ impl Win {
         let msix = self.localappdata().join(r"Microsoft\WindowsApps\Claude.exe");
         if msix.is_file() {
             return Some(msix);
+        }
+        if let Some(exe) = Self::claude_from_running_process() {
+            return Some(exe);
+        }
+        if let Some(exe) = Self::claude_from_appx() {
+            return Some(exe);
         }
         for root in self.candidate_roots() {
             if let Some(exe) = Self::exe_in_root(&root) {
@@ -238,33 +292,6 @@ impl Win {
         fs::write(self.launcher_cmd(slug), body).map_err(|e| e.to_string())
     }
 
-    /// Create the Start-Menu .lnk (target = launcher .cmd, custom icon) via
-    /// WScript.Shell. AUMID is applied afterwards by set-aumid.ps1 (WScript.Shell
-    /// cannot set it). `icon_location` is a "path,index" string.
-    fn create_shortcut(&self, name: &str, slug: &str, icon_location: &str) -> Result<(), String> {
-        fs::create_dir_all(self.start_menu()).map_err(|e| e.to_string())?;
-        let lnk = self.lnk_path(name);
-        let cmd = self.launcher_cmd(slug);
-        let ps = format!(
-            "$w=New-Object -ComObject WScript.Shell; $s=$w.CreateShortcut('{lnk}'); \
-             $s.TargetPath='{cmd}'; $s.WorkingDirectory='{wd}'; \
-             $s.IconLocation='{icon}'; $s.WindowStyle=7; $s.Save()",
-            lnk = ps_quote(&lnk.display().to_string()),
-            cmd = ps_quote(&cmd.display().to_string()),
-            wd = ps_quote(&self.app_root().display().to_string()),
-            icon = ps_quote(icon_location),
-        );
-        let (ok, e) = run(
-            "powershell",
-            &["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", &ps],
-        );
-        if ok {
-            Ok(())
-        } else {
-            Err(e)
-        }
-    }
-
     fn count_apps(&self) -> usize {
         fs::read_dir(self.app_root())
             .map(|rd| {
@@ -273,6 +300,20 @@ impl Win {
                     .count()
             })
             .unwrap_or(0)
+    }
+
+    /// Query all running `Claude.exe` process CommandLines in a single PowerShell call.
+    fn all_running_commandlines(&self) -> Vec<String> {
+        let ps = "Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'Claude.exe' } | Select-Object -ExpandProperty CommandLine";
+        let (ok, out) = run(
+            "powershell",
+            &["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", ps],
+        );
+        if ok {
+            out.lines().map(|s| s.to_string()).collect()
+        } else {
+            vec![]
+        }
     }
 
     /// pids of Claude processes whose CommandLine references this data dir.
@@ -330,40 +371,39 @@ impl Platform for Win {
         let _ = fs::write(self.tint_file(&slug), format!("#{hex}"));
 
         let (aumid_ps, tint_ps) = self.ensure_helpers().unwrap_or_default();
-
-        // Best-effort tinted .ico; fall back to Claude's own icon on any failure.
         let ico = self.ico_file(&slug);
-        let icon_location = if !tint_ps.as_os_str().is_empty()
-            && self.run_ps(
-                &tint_ps,
-                &[
-                    ("Exe", &exe.display().to_string()),
-                    ("Out", &ico.display().to_string()),
-                    ("Hex", &hex),
-                ],
-            )
-            && ico.is_file()
-        {
-            format!("{},0", ico.display())
-        } else {
-            format!("{},0", exe.display())
-        };
+        let lnk = self.lnk_path(name);
+        let cmd = self.launcher_cmd(&slug);
+        let app_root = self.app_root();
 
-        // Best-effort: a failed Start-Menu shortcut must not abort creation — the
-        // .cmd launcher is the functional core and the app's Launch falls back to it.
-        let _ = self.create_shortcut(name, &slug, &icon_location);
+        // Consolidated PowerShell setup script: tint icon, create shortcut, set AUMID in ONE invocation.
+        let ps_script = format!(
+            "$ErrorActionPreference='SilentlyContinue'; \
+             if ('{tint_ps}' -ne '' -and (Test-Path '{tint_ps}')) {{ & '{tint_ps}' -Exe '{exe}' -Out '{ico}' -Hex '{hex}' }}; \
+             $iconLoc = if (Test-Path '{ico}') {{ '{ico},0' }} else {{ '{exe},0' }}; \
+             $w = New-Object -ComObject WScript.Shell; \
+             $s = $w.CreateShortcut('{lnk}'); \
+             $s.TargetPath = '{cmd}'; \
+             $s.WorkingDirectory = '{wd}'; \
+             $s.IconLocation = $iconLoc; \
+             $s.WindowStyle = 7; \
+             $s.Save(); \
+             if ('{aumid_ps}' -ne '' -and (Test-Path '{aumid_ps}')) {{ & '{aumid_ps}' -Lnk '{lnk}' -Aumid '{aumid}' }}",
+            tint_ps = ps_quote(&tint_ps.display().to_string()),
+            exe = ps_quote(&exe.display().to_string()),
+            ico = ps_quote(&ico.display().to_string()),
+            hex = hex,
+            lnk = ps_quote(&lnk.display().to_string()),
+            cmd = ps_quote(&cmd.display().to_string()),
+            wd = ps_quote(&app_root.display().to_string()),
+            aumid_ps = ps_quote(&aumid_ps.display().to_string()),
+            aumid = format!("{BUNDLE_PREFIX}.{slug}"),
+        );
 
-        // Best-effort unique AUMID (see set-aumid.ps1 for the Electron caveat).
-        if !aumid_ps.as_os_str().is_empty() {
-            let aumid = format!("{BUNDLE_PREFIX}.{slug}");
-            let _ = self.run_ps(
-                &aumid_ps,
-                &[
-                    ("Lnk", &self.lnk_path(name).display().to_string()),
-                    ("Aumid", &aumid),
-                ],
-            );
-        }
+        let _ = run(
+            "powershell",
+            &["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", &ps_script],
+        );
         Ok(())
     }
 
@@ -373,35 +413,45 @@ impl Platform for Win {
             Ok(r) => r,
             Err(_) => return out,
         };
-        for e in rd.flatten() {
+        let entries: Vec<_> = rd
+            .flatten()
+            .filter(|e| e.path().extension().map_or(false, |x| x == "cmd"))
+            .collect();
+        if entries.is_empty() {
+            return out;
+        }
+
+        // Fetch running processes ONCE for all profiles instead of N times.
+        let running_cmds = self.all_running_commandlines();
+
+        for e in entries {
             let p = e.path();
-            if p.extension().map_or(false, |x| x == "cmd") {
-                let slug = p.file_stem().unwrap_or_default().to_string_lossy().to_string();
-                let name = fs::read_to_string(self.name_file(&slug))
-                    .ok()
-                    .map(|s| s.trim().to_string())
-                    .filter(|s| !s.is_empty())
-                    .unwrap_or_else(|| slug.clone());
-                let data_dir = self.data_root().join(&slug);
-                let running = !self.profile_pids(&data_dir).is_empty();
-                let tint = fs::read_to_string(self.tint_file(&slug))
-                    .ok()
-                    .map(|s| s.trim().to_string());
-                let md = fs::metadata(&data_dir).ok();
-                let created = md.as_ref().and_then(|m| m.created().ok()).and_then(to_secs);
-                let last_active = md.as_ref().and_then(|m| m.modified().ok()).and_then(to_secs);
-                out.push(Profile {
-                    name,
-                    slug,
-                    app_path: p.display().to_string(),
-                    data_path: data_dir.display().to_string(),
-                    running,
-                    data_size: "—".into(),
-                    tint,
-                    created,
-                    last_active,
-                });
-            }
+            let slug = p.file_stem().unwrap_or_default().to_string_lossy().to_string();
+            let name = fs::read_to_string(self.name_file(&slug))
+                .ok()
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .unwrap_or_else(|| slug.clone());
+            let data_dir = self.data_root().join(&slug);
+            let dd_lower = data_dir.display().to_string().to_lowercase();
+            let running = running_cmds.iter().any(|cmd| cmd.to_lowercase().contains(&dd_lower));
+            let tint = fs::read_to_string(self.tint_file(&slug))
+                .ok()
+                .map(|s| s.trim().to_string());
+            let md = fs::metadata(&data_dir).ok();
+            let created = md.as_ref().and_then(|m| m.created().ok()).and_then(to_secs);
+            let last_active = md.as_ref().and_then(|m| m.modified().ok()).and_then(to_secs);
+            out.push(Profile {
+                name,
+                slug,
+                app_path: p.display().to_string(),
+                data_path: data_dir.display().to_string(),
+                running,
+                data_size: "—".into(),
+                tint,
+                created,
+                last_active,
+            });
         }
         out.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
         out
