@@ -309,7 +309,9 @@ function closeModals() {
   $("#create-modal").classList.add("hidden");
   $("#edit-modal").classList.add("hidden");
   $("#del-modal").classList.add("hidden");
+  $("#token-modal")?.classList.add("hidden");
   pendingDelete = null;
+  tokenTarget = null;
 }
 function anyModalOpen() {
   return ![...document.querySelectorAll(".modal")].every((m) => m.classList.contains("hidden"));
@@ -345,6 +347,127 @@ document.addEventListener("keydown", (e) => {
   else if (e.key === "Backspace" || e.key === "Delete") { e.preventDefault(); openDelete(); }
 });
 
+// ---------- CLI view ----------
+function cliCurrent() { return cliProfiles.find((p) => p.slug === cliSelected) || null; }
+
+function setView(v) {
+  view = v;
+  document.querySelectorAll(".segmented .seg").forEach((b) => b.classList.toggle("sel", b.dataset.view === v));
+  // Desktop content root is the whole `.app` grid (#app-desktop: sidebar + detail), not just <main> —
+  // hiding only <main> would leave the Desktop sidebar showing next to the CLI view's own sidebar.
+  $("#app-desktop").classList.toggle("hidden", v === "cli");
+  $("#cli-view").classList.toggle("hidden", v !== "cli");
+  if (v === "cli") reloadCli();
+}
+
+async function reloadCli() {
+  try {
+    cliAvailable = await invoke("cli_available");
+    cliProfiles = await invoke("list_cli_profiles");
+    if (!cliProfiles.some((p) => p.slug === cliSelected)) cliSelected = cliProfiles[0]?.slug ?? null;
+    renderCliList();
+    renderCliDetail();
+  } catch (e) { console.error(e); }
+}
+
+function renderCliList() {
+  const ul = $("#cli-list");
+  ul.innerHTML = "";
+  for (const p of cliProfiles) {
+    const li = document.createElement("li");
+    li.className = "p-item" + (p.slug === cliSelected ? " sel" : "");
+    const nm = document.createElement("span");
+    nm.className = "nm";
+    nm.textContent = p.name;
+    li.appendChild(nm);
+    if (!p.has_token) {
+      const w = document.createElement("span");
+      w.className = "badge warn";
+      w.textContent = "no token";
+      li.appendChild(w);
+    }
+    li.onclick = () => { cliSelected = p.slug; renderCliList(); renderCliDetail(); };
+    ul.appendChild(li);
+  }
+}
+
+function renderCliDetail() {
+  const body = $("#cli-detail-body");
+  const bar = $("#cli-actionbar");
+  const p = cliCurrent();
+  if (!p) {
+    bar.classList.add("hidden");
+    body.innerHTML = `<div class="empty"><div class="big">No CLI account</div>
+      <div class="small">Create one, then set its token from <code>claude setup-token</code>.</div></div>`;
+    return;
+  }
+  bar.classList.remove("hidden");
+  body.innerHTML = `
+    <div class="hero"><div class="meta">
+      <div class="name">${escapeHtml(p.name)}</div>
+      <div class="sub">${p.account_email ? escapeHtml(p.account_email) : (p.has_token ? "Token set" : '<span style="color:var(--warn)">No token — set one to use this account</span>')}</div>
+    </div></div>
+    <div class="stats">
+      <div class="stat"><div class="k">Token</div><div class="v">${p.has_token ? "✓ stored" : "— missing"}</div></div>
+      <div class="stat"><div class="k">Storage</div><div class="v">${prettySize(p.data_size)}</div></div>
+      <div class="stat"><div class="k">Last active</div><div class="v">${relTime(p.last_active)}</div></div>
+    </div>
+    <div class="field"><div class="k">Config directory</div></div>`;
+  const path = document.createElement("div");
+  path.className = "path";
+  path.textContent = p.config_dir;
+  path.title = "Open in Finder";
+  path.onclick = () => invoke("reveal_path", { path: p.config_dir });
+  body.appendChild(path);
+
+  const primary = $("#cli-primary");
+  primary.textContent = `Launch ${p.name}`;
+  primary.disabled = !p.has_token;
+  primary.onclick = () => doCliLaunch(p);
+}
+
+async function doCliLaunch(p) {
+  try { await invoke("launch_cli_profile", { name: p.name }); }
+  catch (e) { alert(String(e)); }
+}
+
+async function doCliCreate() {
+  const name = prompt("Name this CLI account (e.g. Work, Personal):");
+  if (!name || !name.trim()) return;
+  try { await invoke("create_cli_profile", { name: name.trim() }); }
+  catch (e) { alert(String(e)); return; }
+  await reloadCli();
+  const made = cliProfiles.find((p) => p.name === name.trim());
+  if (made) { cliSelected = made.slug; renderCliList(); renderCliDetail(); openTokenModal(); }
+}
+
+let tokenTarget = null;
+function openTokenModal() {
+  const p = cliCurrent(); if (!p) return;
+  tokenTarget = p;
+  $("#token-input").value = "";
+  $("#token-modal").classList.remove("hidden");
+  setTimeout(() => $("#token-input").focus(), 30);
+}
+async function doTokenSave() {
+  if (!tokenTarget) return;
+  const token = $("#token-input").value.trim();
+  if (!token) return;
+  try { await invoke("set_cli_token", { name: tokenTarget.name, token }); }
+  catch (e) { alert(String(e)); return; }
+  $("#token-modal").classList.add("hidden");
+  tokenTarget = null;
+  await reloadCli();
+}
+
+async function doCliDelete() {
+  const p = cliCurrent(); if (!p) return;
+  if (!confirm(`Delete CLI account "${p.name}"? (also removes its token + config)`)) return;
+  try { await invoke("delete_cli_profile", { name: p.name, purge: true }); }
+  catch (e) { alert(String(e)); return; }
+  await reloadCli();
+}
+
 // ---------- wire up ----------
 window.addEventListener("DOMContentLoaded", () => {
   $("#search").addEventListener("input", (e) => { query = e.target.value; renderList(); });
@@ -358,6 +481,14 @@ window.addEventListener("DOMContentLoaded", () => {
   $("#del-go").onclick = doDelete;
   $("#repair-link").onclick = () => invoke("repair_profiles").then(() => reload());
   $("#feedback").onclick = () => invoke("open_url", { url: "mailto:amory.dev@gmail.com?subject=Personae%20feedback" });
+  document.querySelectorAll(".segmented .seg").forEach((b) => b.onclick = () => setView(b.dataset.view));
+  $("#cli-new-side").onclick = doCliCreate;
+  $("#cli-settoken").onclick = openTokenModal;
+  $("#cli-delete").onclick = doCliDelete;
+  $("#token-open").onclick = () => { const p = cliCurrent(); if (p) invoke("open_cli_setup_token", { name: p.name }); };
+  $("#token-cancel").onclick = () => { $("#token-modal").classList.add("hidden"); tokenTarget = null; };
+  $("#token-save").onclick = doTokenSave;
+  // #token-modal already gets outside-click-to-close from the generic ".modal" loop below.
   for (const m of document.querySelectorAll(".modal")) {
     m.addEventListener("click", (e) => { if (e.target === m) closeModals(); });
   }
