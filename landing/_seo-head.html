@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  <title>Personae — Run multiple Claude accounts at once, Desktop &amp; CLI | macOS &amp; Windows</title>
+  <meta name="description" content="Personae runs multiple isolated Claude accounts at once — Claude Desktop profiles and Claude Code (CLI) accounts, each with its own login, history, and colour. Free, local, ~3 MB. Switch Claude accounts without logging out.">
+  <meta name="keywords" content="multiple Claude accounts, multi Claude, Claude Desktop profiles, Claude profile switcher, run two Claude accounts, multi-account Claude, Claude multiple accounts macOS, Claude multiple accounts Windows, multiple Claude Code accounts, Claude Code multi account, Claude CLI switch account, run multiple Claude Code, CLAUDE_CONFIG_DIR">
+  <meta name="author" content="Amory">
+  <meta name="robots" content="index, follow">
+  <meta name="theme-color" content="#0b0b0e">
+  <link rel="canonical" href="https://claudemux.com/">
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+
+  <!-- Open Graph (Facebook, LinkedIn, iMessage, Slack…) -->
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Personae">
+  <meta property="og:title" content="Personae — Run multiple Claude accounts at once, Desktop &amp; CLI">
+  <meta property="og:description" content="Every Claude Desktop profile and Claude Code account in its own space — login, history, colour. Free, local, native. macOS &amp; Windows.">
+  <meta property="og:url" content="https://claudemux.com/">
+  <meta property="og:image" content="https://claudemux.com/og.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+
+  <!-- Twitter / X -->
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Personae — Run multiple Claude accounts at once, Desktop &amp; CLI">
+  <meta name="twitter:description" content="Every Claude Desktop profile and Claude Code account in its own space. Free, local, native.">
+  <meta name="twitter:image" content="https://claudemux.com/og.png">
+
+  <!-- Structured data: software app -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "Personae",
+    "description": "Run multiple isolated Claude accounts at once — Claude Desktop profiles and Claude Code (CLI) accounts, each with its own login, history, and colour. Free, local, native to macOS and Windows.",
+    "applicationCategory": "UtilitiesApplication",
+    "operatingSystem": "macOS, Windows",
+    "softwareVersion": "0.1.0",
+    "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+    "url": "https://claudemux.com/",
+    "author": { "@type": "Person", "email": "amory.dev@gmail.com" }
+  }
+  </script>
+
+  <!-- Structured data: FAQ (can earn a rich FAQ result on Google) -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    "mainEntity": [
+      { "@type": "Question", "name": "Can I run two or more Claude accounts at the same time?", "acceptedAnswer": { "@type": "Answer", "text": "Yes. Personae has no instance limit — open as many Claude Desktop windows and Claude Code terminals as you like, all at once, each signed in to a different account." } },
+      { "@type": "Question", "name": "Does it work with Claude Code (the CLI)?", "acceptedAnswer": { "@type": "Answer", "text": "Yes. Create a CLI account for each login; each keeps its own real Claude sign-in with full email and org identity, and runs independently. Open a project and its IDE terminals launch claude already signed in to that account, so you never log out to switch." } },
+      { "@type": "Question", "name": "How do I run multiple Claude accounts on a Mac?", "acceptedAnswer": { "@type": "Answer", "text": "Install Personae, add a profile or CLI account for each login (Work, Personal, a client), then launch. Every one is fully isolated with its own login and history — sign in once and it stays signed in." } },
+      { "@type": "Question", "name": "Which IDEs does the CLI integration support?", "acceptedAnswer": { "@type": "Answer", "text": "VS Code, Cursor, Windsurf, and Antigravity — any VS Code-family editor. Personae sets CLAUDE_CONFIG_DIR for the project folder so its terminals use the right Claude Code account automatically." } },
+      { "@type": "Question", "name": "Does it work on Windows?", "acceptedAnswer": { "@type": "Answer", "text": "Desktop profiles run on macOS 11+ and Windows 10+. The Claude Code (CLI) accounts are macOS for now." } },
+      { "@type": "Question", "name": "Is my data private? Does Personae see my logins?", "acceptedAnswer": { "@type": "Answer", "text": "No. There is no account, no server, and no telemetry. Personae only orchestrates the Claude you already installed; each profile and account's data stays on your machine, isolated from the others." } },
+      { "@type": "Question", "name": "Will it break when Claude updates?", "acceptedAnswer": { "@type": "Answer", "text": "No. Personae wraps your installed Claude rather than repackaging it, so it keeps working after Claude's auto-updates." } },
+      { "@type": "Question", "name": "Is Personae free? Is it official?", "acceptedAnswer": { "@type": "Answer", "text": "It is free. It is an independent companion tool — not affiliated with, or endorsed by, Anthropic." } }
+    ]
+  }
+  </script>
+</head>
+<body>
