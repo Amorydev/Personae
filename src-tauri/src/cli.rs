@@ -145,6 +145,24 @@ mod imp {
         let user = std::env::var("USER").unwrap_or_default();
         run("security", &["find-generic-password", "-s", &svc, "-a", &user]).0
     }
+
+    /// Mark this profile's config dir as onboarded so interactive `claude` skips
+    /// the first-run login/onboarding menu (`claude auth login` stores the
+    /// credential but does NOT set this flag, so without it a logged-in profile
+    /// still shows the menu). Idempotent + best-effort: only writes when the flag
+    /// isn't already true, so it doesn't churn .claude.json on every list.
+    pub fn mark_onboarded(slug: &str) {
+        let f = config_dir(slug).join(".claude.json");
+        let mut v: serde_json::Value = fs::read_to_string(&f).ok()
+            .and_then(|s| serde_json::from_str(&s).ok())
+            .unwrap_or_else(|| serde_json::json!({}));
+        if v.get("hasCompletedOnboarding").and_then(|b| b.as_bool()) == Some(true) { return; }
+        if let Some(o) = v.as_object_mut() {
+            o.insert("hasCompletedOnboarding".to_string(), serde_json::Value::Bool(true));
+        }
+        let _ = fs::create_dir_all(config_dir(slug));
+        if let Ok(s) = serde_json::to_string_pretty(&v) { let _ = fs::write(&f, s); }
+    }
 }
 
 /// Absolute path to claude if resolvable, else the bare command name "claude".
@@ -157,6 +175,19 @@ pub fn imp_claude_bin_string() -> String {
 }
 #[cfg(not(target_os = "macos"))]
 pub fn imp_claude_bin_string() -> String { "claude".to_string() }
+
+/// If this profile has a stored login, ensure its config dir is marked onboarded
+/// so interactive `claude` (via Launch or an IDE terminal) skips the first-run
+/// login menu and goes straight in on the stored account. No-op when not logged
+/// in (we WANT the menu then, so the user can sign in). Called by cli::launch,
+/// cli::list, and ide::open_in_ide.
+#[cfg(target_os = "macos")]
+pub fn ensure_onboarded(name: &str) {
+    let slug = crate::platform::slugify(name);
+    if imp::login_present(&slug) { imp::mark_onboarded(&slug); }
+}
+#[cfg(not(target_os = "macos"))]
+pub fn ensure_onboarded(_name: &str) {}
 
 // ---- public API (macOS) --------------------------------------------------
 #[cfg(target_os = "macos")]
@@ -198,6 +229,7 @@ pub fn login(name: &str) -> Result<(), String> {
 pub fn launch(name: &str) -> Result<(), String> {
     let lp = imp::launcher_path(name);
     if !lp.exists() { return Err(format!("No such CLI profile: {name}")); }
+    ensure_onboarded(name); // skip the first-run menu if already logged in
     let (ok, e) = crate::platform::run("open", &[&lp.display().to_string()]);
     if ok { Ok(()) } else { Err(e) }
 }
@@ -222,6 +254,7 @@ pub fn list() -> Vec<CliProfile> {
             // Reliable signal = the login's Keychain slot exists (email is only a
             // lazily-cached display value that may lag behind the actual login).
             let logged_in = imp::login_present(&slug);
+            if logged_in { imp::mark_onboarded(&slug); } // self-heal: skip first-run menu once logged in
             let md = std::fs::metadata(&cfg).ok();
             let created = md.as_ref().and_then(|m| m.created().ok()).and_then(to_secs);
             let last_active = md.as_ref().and_then(|m| m.modified().ok()).and_then(to_secs);

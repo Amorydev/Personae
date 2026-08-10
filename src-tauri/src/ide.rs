@@ -175,6 +175,9 @@ pub fn open_in_ide(account: &str, ide_id: &str, project_path: &str, _mode: &str)
     let cli = imp::ide_cli(ide_id).ok_or_else(|| format!("IDE not found: {ide_id}"))?;
     let cfg = imp::cli_config_dir(&slug);
     let claude = crate::cli::imp_claude_bin_string();
+    // If already logged in, skip the first-run menu so the IDE terminal goes
+    // straight in on the account (auth login doesn't set this flag itself).
+    crate::cli::ensure_onboarded(account);
 
     let vscode = proj.join(".vscode");
     std::fs::create_dir_all(&vscode).map_err(|e| e.to_string())?;
