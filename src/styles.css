@@ -101,6 +101,7 @@ input, .path { -webkit-user-select: text; user-select: text; }
 .p-item .nm { font-size: 14px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 .side-foot { padding: 10px 12px; border-top: 1px solid var(--border-soft); flex: none; }
+.ws-empty { padding: 6px 14px; font-size: 12px; color: var(--text-dim); line-height: 1.4; list-style: none; }
 .newbtn {
   width: 100%; display: flex; align-items: center; gap: 8px;
   background: transparent; border: 1px solid var(--border);

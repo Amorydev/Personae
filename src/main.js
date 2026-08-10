@@ -541,15 +541,23 @@ async function doOpenIde() {
 async function reloadWorkspaces() {
   const list = await invoke("list_workspaces");
   const ul = $("#ws-list"); ul.innerHTML = "";
+  if (!list.length) {
+    const hint = document.createElement("li");
+    hint.className = "ws-empty";
+    hint.textContent = "No saved workspaces yet — use “Open in IDE…” to bind an account to a project.";
+    ul.appendChild(hint);
+    return;
+  }
   for (const w of list) {
     const li = document.createElement("li");
     li.className = "p-item";
     const nm = document.createElement("span"); nm.className = "nm";
-    nm.textContent = `${w.account_name} · ${w.ide_name}`;
+    const folder = w.project_path.replace(/\/+$/, "").split("/").pop() || w.project_path;
+    nm.textContent = `${folder} · ${w.account_name}`;
     const sub = document.createElement("span"); sub.className = "badge";
-    sub.textContent = w.project_path.split("/").pop() || w.project_path;
+    sub.textContent = w.ide_name;
     li.appendChild(nm); li.appendChild(sub);
-    li.title = w.project_path;
+    li.title = `${w.project_path} — ${w.account_name} (${w.ide_name})`;
     li.onclick = async () => {
       try { await invoke("open_workspace", { id: w.id, now: now() }); }
       catch (e) { alert(String(e)); }
