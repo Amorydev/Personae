@@ -8,8 +8,6 @@ on:
 
 jobs:
   build:
-    permissions:
-      contents: write # cần quyền này để tạo Release
     strategy:
       fail-fast: false
       matrix:
@@ -36,14 +34,46 @@ jobs:
       - name: Install frontend deps
         run: npm install
 
-      - name: Build & publish release
+      - name: Build app (Tauri)
         uses: tauri-apps/tauri-action@v0
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tagName: ${{ github.ref_name }}
-          releaseName: 'Personae ${{ github.ref_name }}'
-          releaseBody: 'Tải file cài đặt bên dưới. macOS (Apple Silicon/Intel) và Windows.'
-          releaseDraft: true   # tạo bản nháp để bạn kiểm tra trước khi Publish
-          prerelease: false
           args: ${{ matrix.args }}
+
+      # Upload file cài đặt lên VPS qua SSH (nguồn tải công khai, KHÔNG lộ GitHub).
+      # Repo để private — người dùng tải qua https://claudemux.com/dl/latest/...
+      - name: Upload installers to VPS
+        shell: bash
+        env:
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_PATH: ${{ secrets.VPS_PATH }}   # vd: /var/www/claudemux/dl
+          VPS_PORT: ${{ secrets.VPS_PORT }}   # tùy chọn, mặc định 22
+          VERSION: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          if [ "${{ matrix.platform }}" = "macos-latest" ]; then
+            SRC=$(find src-tauri/target -type f -name '*.dmg' | head -n1)
+            STABLE_NAME="Personae-macOS.dmg"
+          else
+            SRC=$(find src-tauri/target -type f -name '*-setup.exe' | head -n1)
+            STABLE_NAME="Personae-Windows-setup.exe"
+          fi
+          if [ -z "${SRC:-}" ] || [ ! -f "$SRC" ]; then
+            echo "::error::Không tìm thấy file cài đặt để upload"; exit 1
+          fi
+          BASE=$(basename "$SRC")
+          PORT="${VPS_PORT:-22}"
+
+          # Ghi private key ra file tạm
+          KEY="$RUNNER_TEMP/deploy_key"
+          printf '%s\n' "$VPS_SSH_KEY" > "$KEY"
+          chmod 600 "$KEY"
+          SSH_OPTS="-i $KEY -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
+
+          echo "Uploading $SRC -> $VPS_USER@$VPS_HOST:$VPS_PATH/{$VERSION/$BASE, latest/$STABLE_NAME}"
+          ssh $SSH_OPTS -p "$PORT" "$VPS_USER@$VPS_HOST" "mkdir -p '$VPS_PATH/$VERSION' '$VPS_PATH/latest'"
+          # Bản lưu trữ theo version
+          scp $SSH_OPTS -P "$PORT" "$SRC" "$VPS_USER@$VPS_HOST:$VPS_PATH/$VERSION/$BASE"
+          # Bản "latest" cố định (landing luôn trỏ vào đây)
+          scp $SSH_OPTS -P "$PORT" "$SRC" "$VPS_USER@$VPS_HOST:$VPS_PATH/latest/$STABLE_NAME"
