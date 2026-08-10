@@ -81,9 +81,11 @@ pub fn extract_email(json: &str) -> Option<String> {
 
 // ---- cross-platform Windows-launcher builders (pure; unit-tested on macOS) --
 
-/// Double `%` so it is literal inside a batch `set "VAR=…"`. Other cmd
-/// metachars (`& ^ < > |`) are literal within the quotes, so nothing else
-/// needs escaping.
+/// Double `%` so it is literal inside a batch `set "VAR=…"`. NOT a
+/// general-purpose escaper: it is sufficient only for the constrained values we
+/// pass (config-dir paths under `%APPDATA%` with `[a-z0-9-]` slugs, and the
+/// resolved claude bin path). Within `set "…"` the other cmd metachars
+/// (`& ^ < > |`) are already literal, so `%` is the only hazard for those inputs.
 #[allow(dead_code)] // used on Windows + in tests; unreferenced in the macOS build
 pub fn cmd_set_value_escape(s: &str) -> String { s.replace('%', "%%") }
 
@@ -510,15 +512,19 @@ pub fn launch(name: &str) -> Result<(), String> {
     if !lp.exists() { return Err(format!("No such CLI account: {name}")); }
     ensure_onboarded(name); // skip the first-run menu if already logged in
     // New interactive console running the launcher (keeps window; user gets a
-    // claude REPL). `cmd /K` keeps the window open. TODO(verify) start/K quoting.
-    let inner = format!("\"{}\"", lp.display());
-    let (ok, out) = crate::platform::run("cmd", &["/C", "start", "", "cmd", "/K", &inner]);
+    // claude REPL). `cmd /K` keeps the window open. Pass the launcher path BARE
+    // (no manual quotes): std::process::Command already quotes each arg, so a
+    // pre-quoted string would reach cmd as literal quotes. TODO(verify) start/K.
+    let (ok, out) = crate::platform::run(
+        "cmd",
+        &["/C", "start", "", "cmd", "/K", &lp.display().to_string()],
+    );
     if ok { Ok(()) } else { Err(out.trim().to_string()) }
 }
 
 #[cfg(windows)]
 pub fn list() -> Vec<CliProfile> {
-    use crate::platform::{slugify, to_secs};
+    use crate::platform::to_secs;
     let mut out = vec![];
     let rd = match std::fs::read_dir(imp_win::launcher_root()) { Ok(r) => r, Err(_) => return out };
     for e in rd.flatten() {
@@ -537,7 +543,6 @@ pub fn list() -> Vec<CliProfile> {
             let md = std::fs::metadata(&cfg).ok();
             let created = md.as_ref().and_then(|m| m.created().ok()).and_then(to_secs);
             let last_active = md.as_ref().and_then(|m| m.modified().ok()).and_then(to_secs);
-            let _ = slugify(&name);
             out.push(CliProfile {
                 name, slug,
                 config_dir: cfg.display().to_string(),
@@ -677,6 +682,37 @@ mod tests {
         mark_onboarded_at(&d);
         let v2: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(d.join(".claude.json")).unwrap()).unwrap();
         assert_eq!(v2["hasCompletedOnboarding"], serde_json::json!(true));
+        std::fs::remove_dir_all(&d).ok();
+    }
+
+    #[test]
+    fn win_launcher_comment_is_single_line_and_escapes_percent() {
+        // The display name lands ONLY in the REM comment. CR/LF must be stripped
+        // so an injected `set EVIL=1` cannot break out into its own command line,
+        // and `%` must be doubled so it isn't expanded.
+        let s = render_launcher_win("a\r\nset EVIL=1\r\nrem %x%", r"C:\cfg\a", r"C:\bin\claude.cmd");
+        let rem_lines: Vec<&str> = s.lines().filter(|l| l.trim_start().starts_with("REM")).collect();
+        assert_eq!(rem_lines.len(), 1, "name must not inject extra lines");
+        let rem = rem_lines[0];
+        assert!(rem.contains("aset EVIL=1rem"), "CR/LF should be stripped, got: {rem}");
+        assert!(rem.contains("%%x%%"), "percent must be doubled in the comment");
+        // The injected fragment must never appear as its own command line.
+        assert!(!s.lines().any(|l| l.trim() == "set EVIL=1"));
+    }
+
+    #[test]
+    fn mark_onboarded_preserves_existing_json() {
+        let d = std::env::temp_dir().join(format!("cli-onb-preserve-{}", std::process::id()));
+        std::fs::create_dir_all(&d).unwrap();
+        std::fs::write(
+            d.join(".claude.json"),
+            r#"{"oauthAccount":{"emailAddress":"a@b.com"},"foo":"bar"}"#,
+        ).unwrap();
+        mark_onboarded_at(&d);
+        let v: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(d.join(".claude.json")).unwrap()).unwrap();
+        assert_eq!(v["hasCompletedOnboarding"], serde_json::json!(true));
+        assert_eq!(v["foo"], serde_json::json!("bar"));
+        assert_eq!(v["oauthAccount"]["emailAddress"], serde_json::json!("a@b.com"));
         std::fs::remove_dir_all(&d).ok();
     }
 }
