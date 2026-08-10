@@ -259,6 +259,85 @@ mod imp {
     }
 }
 
+// Windows CLI engine — WRITTEN FROM CLAUDE'S CODE + WINDOWS DOCS, NOT YET RUN
+// ON REAL WINDOWS. Every process/quoting assumption is marked TODO(verify); see
+// docs/WINDOWS-TEST-PLAN.md. Isolation needs ONLY CLAUDE_CONFIG_DIR: on Windows
+// there is no Keychain, so claude's credential store falls back to a plaintext
+// <CLAUDE_CONFIG_DIR>\.credentials.json — one config dir per account gives one
+// durable, concurrently-usable login. No keychain hashing, no token injection.
+#[cfg(windows)]
+mod imp_win {
+    use super::*;
+    use std::fs;
+    use std::path::PathBuf;
+
+    fn appdata() -> PathBuf { PathBuf::from(std::env::var("APPDATA").unwrap_or_default()) }
+    fn localappdata() -> PathBuf { PathBuf::from(std::env::var("LOCALAPPDATA").unwrap_or_default()) }
+    fn userprofile() -> PathBuf { PathBuf::from(std::env::var("USERPROFILE").unwrap_or_default()) }
+
+    // %LOCALAPPDATA%\ClaudeProfilesCLI\apps\<slug>.cmd  (+ .name sidecar, + _login\<slug>.cmd)
+    pub fn launcher_root() -> PathBuf { localappdata().join("ClaudeProfilesCLI").join("apps") }
+    // %APPDATA%\ClaudeProfilesCLI\<slug>   == CLAUDE_CONFIG_DIR
+    pub fn config_root() -> PathBuf { appdata().join("ClaudeProfilesCLI") }
+
+    pub fn launcher_path(slug: &str) -> PathBuf { launcher_root().join(format!("{slug}.cmd")) }
+    pub fn name_path(slug: &str) -> PathBuf { launcher_root().join(format!("{slug}.name")) }
+    pub fn login_path(slug: &str) -> PathBuf { launcher_root().join("_login").join(format!("{slug}.cmd")) }
+    pub fn config_dir(slug: &str) -> PathBuf { config_root().join(slug) }
+
+    /// Resolve the claude CLI: env override → `where claude` → common installs.
+    pub fn claude_bin() -> Option<PathBuf> {
+        if let Ok(p) = std::env::var("CLAUDE_CLI_BIN") {
+            let pb = PathBuf::from(p);
+            if pb.is_file() { return Some(pb); }
+        }
+        // TODO(verify): `where claude` resolves the shim on PATH (npm/bun/etc.).
+        let (ok, out) = crate::platform::run("where", &["claude"]);
+        if ok {
+            for line in out.lines() {
+                let pb = PathBuf::from(line.trim());
+                if pb.is_file() { return Some(pb); }
+            }
+        }
+        // TODO(verify): these are the common per-user install layouts on Windows.
+        let candidates = [
+            appdata().join(r"npm\claude.cmd"),
+            appdata().join(r"npm\claude.exe"),
+            localappdata().join(r"npm\claude.cmd"),
+            userprofile().join(r".bun\bin\claude.exe"),
+            userprofile().join(r".local\bin\claude.exe"),
+            userprofile().join(r".claude\local\claude.exe"),
+        ];
+        candidates.into_iter().find(|p| p.is_file())
+    }
+
+    pub fn claude_bin_string() -> String {
+        claude_bin().map(|p| p.display().to_string()).unwrap_or_else(|| "claude".into())
+    }
+
+    pub fn write_launcher(name: &str, slug: &str) -> Result<(), String> {
+        fs::create_dir_all(launcher_root()).map_err(|e| e.to_string())?;
+        let cfg = config_dir(slug).display().to_string();
+        let body = render_launcher_win(name, &cfg, &claude_bin_string());
+        fs::write(launcher_path(slug), body).map_err(|e| e.to_string())?;
+        fs::write(name_path(slug), name).map_err(|e| e.to_string())?; // display-name sidecar
+        Ok(())
+    }
+
+    pub fn write_login_script(name: &str, slug: &str) -> Result<PathBuf, String> {
+        let dir = launcher_root().join("_login");
+        fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+        let cfg = config_dir(slug).display().to_string();
+        let body = render_login_win(name, &cfg, &claude_bin_string());
+        let p = login_path(slug);
+        fs::write(&p, body).map_err(|e| e.to_string())?;
+        Ok(p)
+    }
+
+    pub fn login_present(slug: &str) -> bool { credentials_present_at(&config_dir(slug)) }
+    pub fn mark_onboarded(slug: &str) { mark_onboarded_at(&config_dir(slug)); }
+}
+
 /// Absolute path to claude if resolvable, else the bare command name "claude".
 /// Used by ide.rs so a folderOpen task's `command` works regardless of the
 /// login shell's PATH. Lives at the module root (not inside `mod imp`, which is
@@ -267,7 +346,9 @@ mod imp {
 pub fn imp_claude_bin_string() -> String {
     imp::claude_bin().map(|p| p.display().to_string()).unwrap_or_else(|| "claude".to_string())
 }
-#[cfg(not(target_os = "macos"))]
+#[cfg(windows)]
+pub fn imp_claude_bin_string() -> String { imp_win::claude_bin_string() }
+#[cfg(not(any(target_os = "macos", windows)))]
 pub fn imp_claude_bin_string() -> String { "claude".to_string() }
 
 /// If this profile has a stored login, ensure its config dir is marked onboarded
@@ -280,7 +361,12 @@ pub fn ensure_onboarded(name: &str) {
     let slug = crate::platform::slugify(name);
     if imp::login_present(&slug) { imp::mark_onboarded(&slug); }
 }
-#[cfg(not(target_os = "macos"))]
+#[cfg(windows)]
+pub fn ensure_onboarded(name: &str) {
+    let slug = crate::platform::slugify(name);
+    if imp_win::login_present(&slug) { imp_win::mark_onboarded(&slug); }
+}
+#[cfg(not(any(target_os = "macos", windows)))]
 pub fn ensure_onboarded(_name: &str) {}
 
 // ---- public API (macOS) --------------------------------------------------
@@ -382,20 +468,120 @@ pub fn delete(name: &str, purge: bool) -> Result<(), String> {
     Ok(())
 }
 
-// ---- public API (non-macOS stubs; Phase 3 will implement Win/Linux) ------
-#[cfg(not(target_os = "macos"))]
-const NOT_YET: &str = "CLI profiles are macOS-only for now.";
-#[cfg(not(target_os = "macos"))]
+// ---- public API (Windows) ------------------------------------------------
+// Isolation is by CLAUDE_CONFIG_DIR alone (see imp_win header). Every process /
+// quoting assumption below is marked TODO(verify) for the real-Windows pass.
+#[cfg(windows)]
+pub fn available() -> bool { imp_win::claude_bin().is_some() }
+
+#[cfg(windows)]
+pub fn create(name: &str) -> Result<(), String> {
+    use crate::platform::slugify;
+    let slug = slugify(name);
+    if slug.is_empty() { return Err("Name must contain letters or numbers.".into()); }
+    if imp_win::launcher_path(&slug).exists() { return Err(format!("CLI account already exists: {name}")); }
+    std::fs::create_dir_all(imp_win::config_dir(&slug)).map_err(|e| e.to_string())?;
+    imp_win::write_launcher(name, &slug)?;
+    Ok(())
+}
+
+/// Open a one-shot console running `claude auth login` for this account's
+/// CLAUDE_CONFIG_DIR — the real sign-in. On Windows the credential is written to
+/// <config_dir>\.credentials.json (Keychain is absent), isolated per account.
+#[cfg(windows)]
+pub fn login(name: &str) -> Result<(), String> {
+    use crate::platform::slugify;
+    let slug = slugify(name);
+    if !imp_win::launcher_path(&slug).exists() { return Err(format!("No such CLI account: {name}")); }
+    imp_win::claude_bin().ok_or("Claude Code CLI not found (install `claude`).")?;
+    let script = imp_win::write_login_script(name, &slug)?;
+    // Open the one-shot login console in its own window. TODO(verify) start quoting:
+    // the empty "" is the (unused) window title so a quoted script path is not
+    // mistaken for the title.
+    let (ok, out) = crate::platform::run("cmd", &["/C", "start", "", &script.display().to_string()]);
+    if ok { Ok(()) } else { Err(out.trim().to_string()) }
+}
+
+#[cfg(windows)]
+pub fn launch(name: &str) -> Result<(), String> {
+    use crate::platform::slugify;
+    let slug = slugify(name);
+    let lp = imp_win::launcher_path(&slug);
+    if !lp.exists() { return Err(format!("No such CLI account: {name}")); }
+    ensure_onboarded(name); // skip the first-run menu if already logged in
+    // New interactive console running the launcher (keeps window; user gets a
+    // claude REPL). `cmd /K` keeps the window open. TODO(verify) start/K quoting.
+    let inner = format!("\"{}\"", lp.display());
+    let (ok, out) = crate::platform::run("cmd", &["/C", "start", "", "cmd", "/K", &inner]);
+    if ok { Ok(()) } else { Err(out.trim().to_string()) }
+}
+
+#[cfg(windows)]
+pub fn list() -> Vec<CliProfile> {
+    use crate::platform::{slugify, to_secs};
+    let mut out = vec![];
+    let rd = match std::fs::read_dir(imp_win::launcher_root()) { Ok(r) => r, Err(_) => return out };
+    for e in rd.flatten() {
+        let p = e.path();
+        if p.extension().map_or(false, |x| x == "cmd") {
+            let slug = p.file_stem().unwrap_or_default().to_string_lossy().to_string();
+            let name = std::fs::read_to_string(imp_win::name_path(&slug)).ok()
+                .map(|s| s.trim().to_string()).filter(|s| !s.is_empty())
+                .unwrap_or_else(|| slug.clone());
+            let cfg = imp_win::config_dir(&slug);
+            let data_size = if cfg.exists() { human_size(dir_size_bytes(&cfg)) } else { "—".into() };
+            let account_email = std::fs::read_to_string(cfg.join(".claude.json")).ok()
+                .and_then(|j| extract_email(&j));
+            let logged_in = imp_win::login_present(&slug);
+            if logged_in { imp_win::mark_onboarded(&slug); } // self-heal: skip first-run menu
+            let md = std::fs::metadata(&cfg).ok();
+            let created = md.as_ref().and_then(|m| m.created().ok()).and_then(to_secs);
+            let last_active = md.as_ref().and_then(|m| m.modified().ok()).and_then(to_secs);
+            let _ = slugify(&name);
+            out.push(CliProfile {
+                name, slug,
+                config_dir: cfg.display().to_string(),
+                launcher_path: p.display().to_string(),
+                logged_in, account_email, data_size, created, last_active,
+            });
+        }
+    }
+    out.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    out
+}
+
+#[cfg(windows)]
+pub fn delete(name: &str, purge: bool) -> Result<(), String> {
+    use crate::platform::slugify;
+    let slug = slugify(name);
+    let lp = imp_win::launcher_path(&slug);
+    if !lp.exists() { return Err(format!("No such CLI account: {name}")); }
+    std::fs::remove_file(&lp).map_err(|e| e.to_string())?;
+    let _ = std::fs::remove_file(imp_win::name_path(&slug));
+    let _ = std::fs::remove_file(imp_win::login_path(&slug));
+    if purge {
+        // No Keychain on Windows: the login lives in <config_dir>\.credentials.json,
+        // which is removed with the dir.
+        let cfg = imp_win::config_dir(&slug);
+        if cfg.exists() { std::fs::remove_dir_all(&cfg).map_err(|e| e.to_string())?; }
+    }
+    Ok(())
+}
+
+// ---- public API (Linux/other stubs; not yet implemented) -----------------
+#[cfg(not(any(target_os = "macos", windows)))]
+const NOT_YET: &str = "CLI accounts are macOS/Windows-only for now.";
+#[cfg(not(any(target_os = "macos", windows)))]
 pub fn available() -> bool { false }
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(any(target_os = "macos", windows)))]
 pub fn list() -> Vec<CliProfile> { vec![] }
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(any(target_os = "macos", windows)))]
 pub fn create(_name: &str) -> Result<(), String> { Err(NOT_YET.into()) }
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(any(target_os = "macos", windows)))]
 pub fn login(_name: &str) -> Result<(), String> { Err(NOT_YET.into()) }
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(any(target_os = "macos", windows)))]
 pub fn launch(_name: &str) -> Result<(), String> { Err(NOT_YET.into()) }
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(any(target_os = "macos", windows)))]
 pub fn delete(_name: &str, _purge: bool) -> Result<(), String> { Err(NOT_YET.into()) }
 
 #[cfg(test)]
