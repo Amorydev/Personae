@@ -30,11 +30,13 @@ pub fn workspace_id(ide_id: &str, account_slug: &str, project_path: &str) -> Str
     format!("{ide_id}\u{1}{account_slug}\u{1}{project_path}")
 }
 
-/// Merge `terminal.integrated.env.osx.CLAUDE_CONFIG_DIR = <config_dir>` into an
-/// existing `.vscode/settings.json`, preserving other keys. That single env var
-/// is all a terminal needs: plain `claude` reads the profile's own login. Since
-/// it's an env var (not PATH), it is immune to login-shell PATH re-ordering.
-pub fn merge_vscode_settings(existing: &str, config_dir: &str) -> Result<String, String> {
+/// Merge `<env_key>.CLAUDE_CONFIG_DIR = <config_dir>` into an existing
+/// `.vscode/settings.json`, preserving other keys. VS Code keys the
+/// integrated-terminal env block by OS, so `env_key` is the platform-specific
+/// key (`terminal.integrated.env.osx` / `.windows` / `.linux`). That single env
+/// var is all a terminal needs: plain `claude` reads the profile's own login.
+/// Since it's an env var (not PATH), it is immune to login-shell PATH reordering.
+pub fn merge_vscode_settings(existing: &str, config_dir: &str, env_key: &str) -> Result<String, String> {
     use serde_json::{Map, Value};
     let mut root: Value = if existing.trim().is_empty() {
         Value::Object(Map::new())
@@ -42,19 +44,21 @@ pub fn merge_vscode_settings(existing: &str, config_dir: &str) -> Result<String,
         serde_json::from_str(existing).map_err(|e| format!("existing .vscode/settings.json is not valid JSON: {e}"))?
     };
     let obj = root.as_object_mut().ok_or("settings.json root is not an object")?;
-    let env = obj.entry("terminal.integrated.env.osx".to_string())
+    let env = obj.entry(env_key.to_string())
         .or_insert_with(|| Value::Object(Map::new()));
-    let env = env.as_object_mut().ok_or("terminal.integrated.env.osx is not an object")?;
+    let env = env.as_object_mut().ok_or_else(|| format!("{env_key} is not an object"))?;
     env.insert("CLAUDE_CONFIG_DIR".to_string(), Value::String(config_dir.to_string()));
     serde_json::to_string_pretty(&root).map_err(|e| e.to_string())
 }
 
 /// Merge a `folderOpen` task into an existing `.vscode/tasks.json` (preserving any
 /// other tasks). Upserts by `label`. `command` is the (ideally absolute) claude
-/// binary, run as a process (not through a shell) with CLAUDE_CONFIG_DIR set in
-/// its own env — so it resolves the right account regardless of the login
-/// shell's PATH — and reveals a dedicated focused terminal.
-pub fn merge_vscode_tasks(existing: &str, label: &str, claude_bin: &str, config_dir: &str) -> Result<String, String> {
+/// binary, run with CLAUDE_CONFIG_DIR set in its own env — so it resolves the
+/// right account regardless of the login shell's PATH — and reveals a dedicated
+/// focused terminal. `task_type` is the VS Code task type: `"process"` (macOS,
+/// spawns the binary directly) or `"shell"` (Windows, where a `.cmd` shim
+/// launches more reliably through a shell).
+pub fn merge_vscode_tasks(existing: &str, label: &str, command: &str, config_dir: &str, task_type: &str) -> Result<String, String> {
     use serde_json::{json, Value};
     let mut root: Value = if existing.trim().is_empty() {
         json!({ "version": "2.0.0", "tasks": [] })
@@ -68,8 +72,8 @@ pub fn merge_vscode_tasks(existing: &str, label: &str, claude_bin: &str, config_
     arr.retain(|t| t.get("label").and_then(|l| l.as_str()) != Some(label)); // upsert by label
     arr.push(json!({
         "label": label,
-        "type": "process",
-        "command": claude_bin,
+        "type": task_type,
+        "command": command,
         "options": { "env": { "CLAUDE_CONFIG_DIR": config_dir } },
         "presentation": { "reveal": "always", "panel": "dedicated", "focus": true, "clear": false },
         "runOptions": { "runOn": "folderOpen" },
@@ -183,12 +187,12 @@ pub fn open_in_ide(account: &str, ide_id: &str, project_path: &str) -> Result<()
     let vscode = proj.join(".vscode");
     std::fs::create_dir_all(&vscode).map_err(|e| e.to_string())?;
     let sp = vscode.join("settings.json");
-    let merged = merge_vscode_settings(&std::fs::read_to_string(&sp).unwrap_or_default(), &cfg.display().to_string())?;
+    let merged = merge_vscode_settings(&std::fs::read_to_string(&sp).unwrap_or_default(), &cfg.display().to_string(), "terminal.integrated.env.osx")?;
     std::fs::write(&sp, merged).map_err(|e| e.to_string())?;
 
     let tp = vscode.join("tasks.json");
     let label = format!("Claude Code — {account}");
-    let tasks = merge_vscode_tasks(&std::fs::read_to_string(&tp).unwrap_or_default(), &label, &claude, &cfg.display().to_string())?;
+    let tasks = merge_vscode_tasks(&std::fs::read_to_string(&tp).unwrap_or_default(), &label, &claude, &cfg.display().to_string(), "process")?;
     std::fs::write(&tp, tasks).map_err(|e| e.to_string())?;
 
     // Open the folder (VS Code-family CLIs reuse a running instance; workspace
@@ -262,7 +266,7 @@ mod tests {
 
     #[test]
     fn merge_into_empty_creates_keys() {
-        let out = merge_vscode_settings("", "/cfg/work").unwrap();
+        let out = merge_vscode_settings("", "/cfg/work", "terminal.integrated.env.osx").unwrap();
         let v: serde_json::Value = serde_json::from_str(&out).unwrap();
         let env = &v["terminal.integrated.env.osx"];
         assert_eq!(env["CLAUDE_CONFIG_DIR"], "/cfg/work");
@@ -271,7 +275,7 @@ mod tests {
     #[test]
     fn merge_preserves_existing_user_settings() {
         let existing = r#"{"editor.fontSize":14,"terminal.integrated.env.osx":{"FOO":"bar"}}"#;
-        let out = merge_vscode_settings(existing, "/c").unwrap();
+        let out = merge_vscode_settings(existing, "/c", "terminal.integrated.env.osx").unwrap();
         let v: serde_json::Value = serde_json::from_str(&out).unwrap();
         assert_eq!(v["editor.fontSize"], 14);                       // untouched
         assert_eq!(v["terminal.integrated.env.osx"]["FOO"], "bar"); // untouched
@@ -280,7 +284,16 @@ mod tests {
 
     #[test]
     fn merge_rejects_malformed_json() {
-        assert!(merge_vscode_settings("{not json", "/c").is_err());
+        assert!(merge_vscode_settings("{not json", "/c", "terminal.integrated.env.osx").is_err());
+    }
+
+    #[test]
+    fn merge_settings_windows_env_key_nests_under_windows() {
+        let out = merge_vscode_settings("", r"C:\cfg", "terminal.integrated.env.windows").unwrap();
+        let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+        // The env block lives under the Windows key, not the osx key.
+        assert_eq!(v["terminal.integrated.env.windows"]["CLAUDE_CONFIG_DIR"], r"C:\cfg");
+        assert!(v.get("terminal.integrated.env.osx").is_none());
     }
 
     #[test]
@@ -291,7 +304,7 @@ mod tests {
 
     #[test]
     fn tasks_merge_creates_folderopen_task() {
-        let out = merge_vscode_tasks("", "Claude Code — Work", "/opt/homebrew/bin/claude", "/cfg/work").unwrap();
+        let out = merge_vscode_tasks("", "Claude Code — Work", "/opt/homebrew/bin/claude", "/cfg/work", "process").unwrap();
         let v: serde_json::Value = serde_json::from_str(&out).unwrap();
         assert_eq!(v["version"], "2.0.0");
         let t = &v["tasks"][0];
@@ -302,9 +315,20 @@ mod tests {
     }
 
     #[test]
+    fn tasks_merge_shell_type_yields_shell() {
+        // Windows launches the `.cmd` shim more reliably as a shell task.
+        let out = merge_vscode_tasks("", "Claude Code — Work", "claude", r"C:\cfg\work", "shell").unwrap();
+        let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+        let t = &v["tasks"][0];
+        assert_eq!(t["type"], "shell");
+        assert_eq!(t["command"], "claude");
+        assert_eq!(t["options"]["env"]["CLAUDE_CONFIG_DIR"], r"C:\cfg\work");
+    }
+
+    #[test]
     fn tasks_merge_upserts_and_preserves_others() {
         let existing = r#"{"version":"2.0.0","tasks":[{"label":"build","type":"shell","command":"make"},{"label":"Claude Code — Work","command":"/old"}]}"#;
-        let out = merge_vscode_tasks(existing, "Claude Code — Work", "/new/claude", "/cfg/work").unwrap();
+        let out = merge_vscode_tasks(existing, "Claude Code — Work", "/new/claude", "/cfg/work", "process").unwrap();
         let v: serde_json::Value = serde_json::from_str(&out).unwrap();
         let arr = v["tasks"].as_array().unwrap();
         assert_eq!(arr.len(), 2); // build preserved, our task upserted (not duplicated)
@@ -317,7 +341,7 @@ mod tests {
 
     #[test]
     fn tasks_merge_rejects_malformed() {
-        assert!(merge_vscode_tasks("{bad", "L", "/c", "/cfg").is_err());
+        assert!(merge_vscode_tasks("{bad", "L", "/c", "/cfg", "process").is_err());
     }
 
     #[test]
@@ -327,11 +351,11 @@ mod tests {
 
     #[test]
     fn merge_rejects_non_object_root() {
-        assert!(merge_vscode_settings("[1,2,3]", "/c").is_err());
+        assert!(merge_vscode_settings("[1,2,3]", "/c", "terminal.integrated.env.osx").is_err());
     }
 
     #[test]
     fn merge_rejects_non_object_env() {
-        assert!(merge_vscode_settings(r#"{"terminal.integrated.env.osx":"oops"}"#, "/c").is_err());
+        assert!(merge_vscode_settings(r#"{"terminal.integrated.env.osx":"oops"}"#, "/c", "terminal.integrated.env.osx").is_err());
     }
 }
