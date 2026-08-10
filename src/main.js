@@ -364,6 +364,7 @@ function setView(v) {
 async function reloadCli() {
   try {
     cliAvailable = await invoke("cli_available");
+    $("#cli-new-side").disabled = !cliAvailable;
     cliProfiles = await invoke("list_cli_profiles");
     if (!cliProfiles.some((p) => p.slug === cliSelected)) cliSelected = cliProfiles[0]?.slug ?? null;
     renderCliList();
@@ -395,6 +396,12 @@ function renderCliList() {
 function renderCliDetail() {
   const body = $("#cli-detail-body");
   const bar = $("#cli-actionbar");
+  if (!cliAvailable) {
+    bar.classList.add("hidden");
+    body.innerHTML = `<div class="empty"><div class="big">CLI profiles need Claude Code</div>
+      <div class="small">Install the <code>claude</code> CLI (macOS only for now).</div></div>`;
+    return;
+  }
   const p = cliCurrent();
   if (!p) {
     bar.classList.add("hidden");
@@ -412,14 +419,17 @@ function renderCliDetail() {
       <div class="stat"><div class="k">Token</div><div class="v">${p.has_token ? "✓ stored" : "— missing"}</div></div>
       <div class="stat"><div class="k">Storage</div><div class="v">${prettySize(p.data_size)}</div></div>
       <div class="stat"><div class="k">Last active</div><div class="v">${relTime(p.last_active)}</div></div>
-    </div>
-    <div class="field"><div class="k">Config directory</div></div>`;
+    </div>`;
+  const field = document.createElement("div");
+  field.className = "field";
+  field.innerHTML = `<div class="k">Config directory</div>`;
   const path = document.createElement("div");
   path.className = "path";
   path.textContent = p.config_dir;
   path.title = "Open in Finder";
   path.onclick = () => invoke("reveal_path", { path: p.config_dir });
-  body.appendChild(path);
+  field.appendChild(path);
+  body.appendChild(field);
 
   const primary = $("#cli-primary");
   primary.textContent = `Launch ${p.name}`;
