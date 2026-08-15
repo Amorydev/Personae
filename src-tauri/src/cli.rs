@@ -314,12 +314,18 @@ mod imp_win {
             if pb.is_file() { return Some(pb); }
         }
         // TODO(verify): `where claude` resolves the shim on PATH (npm/bun/etc.).
-        let (ok, out) = crate::platform::run("where", &["claude"]);
-        if ok {
-            for line in out.lines() {
-                let pb = PathBuf::from(line.trim());
-                if pb.is_file() { return Some(pb); }
+        // Probe once; the lines feed both the shim check and the fallback below.
+        let where_lines: Vec<String> = {
+            let (ok, out) = crate::platform::run("where", &["claude"]);
+            if ok {
+                out.lines().map(|l| l.trim().to_string()).filter(|l| !l.is_empty()).collect()
+            } else {
+                Vec::new()
             }
+        };
+        for line in &where_lines {
+            let pb = PathBuf::from(line);
+            if pb.is_file() { return Some(pb); }
         }
         // TODO(verify): these are the common per-user install layouts on Windows.
         let candidates = [
@@ -335,22 +341,18 @@ mod imp_win {
         }
         // Last resort (Windows field report): the shim may be present but its own
         // wrapper broken, or `where claude` may have missed because the GUI has no
-        // npm bin on PATH. Probe the native exe the package unpacks, using both a
-        // fixed npm root and every dir `where claude` did surface.
+        // npm bin on PATH. Probe the native exe the package unpacks.
+        // TODO(verify): the exact nested npm layout (…/claude-code/node_modules/
+        // @anthropic-ai/claude-code-win32-x64/claude.exe) is from one field report.
         let mut npm_dirs: Vec<PathBuf> = vec![appdata().join("npm")];
-        let (ok, out) = crate::platform::run("where", &["claude"]);
-        if ok {
-            for line in out.lines() {
-                if let Some(dir) = PathBuf::from(line.trim()).parent() {
-                    npm_dirs.push(dir.to_path_buf());
-                }
+        for line in &where_lines {
+            if let Some(dir) = PathBuf::from(line).parent() {
+                npm_dirs.push(dir.to_path_buf());
             }
         }
         for dir in npm_dirs {
             let exe = super::nested_win_claude_exe(&dir);
-            if exe.is_file() {
-                return Some(exe);
-            }
+            if exe.is_file() { return Some(exe); }
         }
         None
     }
@@ -765,7 +767,7 @@ mod tests {
     fn nested_win_exe_path_is_assembled() {
         // Given the npm global bin dir (where the `claude` shim lives), we derive
         // the native exe the claude-code package unpacks for win32-x64.
-        let base = std::path::Path::new("NPMROOT");
+        let base = Path::new("NPMROOT");
         let got = nested_win_claude_exe(base);
         let s = got.to_string_lossy();
         assert!(got.ends_with("claude.exe"), "must end at claude.exe: {s}");
