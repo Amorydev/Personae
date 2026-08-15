@@ -6,7 +6,7 @@
 // give distinct, durable, concurrently-usable logins — with zero app-managed
 // secrets. No token injection, no shim, no setup-token capture.
 use serde::Serialize;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 #[derive(Serialize, Clone)]
 pub struct CliProfile {
@@ -88,6 +88,19 @@ pub fn extract_email(json: &str) -> Option<String> {
 /// (`& ^ < > |`) are already literal, so `%` is the only hazard for those inputs.
 #[allow(dead_code)] // used on Windows + in tests; unreferenced in the macOS build
 pub fn cmd_set_value_escape(s: &str) -> String { s.replace('%', "%%") }
+
+/// Path, relative to the npm global bin dir (where the `claude` shim lives), of
+/// the native `claude.exe` that `@anthropic-ai/claude-code` unpacks for
+/// win32-x64. Last-resort resolver fallback: a Windows field report found the
+/// npm `.ps1` shim can carry a broken path, and a Tauri GUI may not inherit the
+/// shell PATH (so `where claude` misses). Pure + unit-tested on macOS.
+#[allow(dead_code)] // used on Windows + in tests; unreferenced in the macOS build
+pub fn nested_win_claude_exe(npm_bin_dir: &Path) -> PathBuf {
+    npm_bin_dir
+        .join("node_modules").join("@anthropic-ai").join("claude-code")
+        .join("node_modules").join("@anthropic-ai").join("claude-code-win32-x64")
+        .join("claude.exe")
+}
 
 /// Sanitize a display name for a batch `REM` comment: strip CR/LF (which would
 /// end the comment line) and double `%`.
@@ -301,12 +314,18 @@ mod imp_win {
             if pb.is_file() { return Some(pb); }
         }
         // TODO(verify): `where claude` resolves the shim on PATH (npm/bun/etc.).
-        let (ok, out) = crate::platform::run("where", &["claude"]);
-        if ok {
-            for line in out.lines() {
-                let pb = PathBuf::from(line.trim());
-                if pb.is_file() { return Some(pb); }
+        // Probe once; the lines feed both the shim check and the fallback below.
+        let where_lines: Vec<String> = {
+            let (ok, out) = crate::platform::run("where", &["claude"]);
+            if ok {
+                out.lines().map(|l| l.trim().to_string()).filter(|l| !l.is_empty()).collect()
+            } else {
+                Vec::new()
             }
+        };
+        for line in &where_lines {
+            let pb = PathBuf::from(line);
+            if pb.is_file() { return Some(pb); }
         }
         // TODO(verify): these are the common per-user install layouts on Windows.
         let candidates = [
@@ -317,7 +336,25 @@ mod imp_win {
             userprofile().join(r".local\bin\claude.exe"),
             userprofile().join(r".claude\local\claude.exe"),
         ];
-        candidates.into_iter().find(|p| p.is_file())
+        if let Some(p) = candidates.into_iter().find(|p| p.is_file()) {
+            return Some(p);
+        }
+        // Last resort (Windows field report): the shim may be present but its own
+        // wrapper broken, or `where claude` may have missed because the GUI has no
+        // npm bin on PATH. Probe the native exe the package unpacks.
+        // TODO(verify): the exact nested npm layout (…/claude-code/node_modules/
+        // @anthropic-ai/claude-code-win32-x64/claude.exe) is from one field report.
+        let mut npm_dirs: Vec<PathBuf> = vec![appdata().join("npm")];
+        for line in &where_lines {
+            if let Some(dir) = PathBuf::from(line).parent() {
+                npm_dirs.push(dir.to_path_buf());
+            }
+        }
+        for dir in npm_dirs {
+            let exe = super::nested_win_claude_exe(&dir);
+            if exe.is_file() { return Some(exe); }
+        }
+        None
     }
 
     pub fn claude_bin_string() -> String {
@@ -724,5 +761,20 @@ mod tests {
         assert_eq!(v["foo"], serde_json::json!("bar"));
         assert_eq!(v["oauthAccount"]["emailAddress"], serde_json::json!("a@b.com"));
         std::fs::remove_dir_all(&d).ok();
+    }
+
+    #[test]
+    fn nested_win_exe_path_is_assembled() {
+        // Given the npm global bin dir (where the `claude` shim lives), we derive
+        // the native exe the claude-code package unpacks for win32-x64.
+        let base = Path::new("NPMROOT");
+        let got = nested_win_claude_exe(base);
+        let s = got.to_string_lossy();
+        assert!(got.ends_with("claude.exe"), "must end at claude.exe: {s}");
+        assert!(s.contains("@anthropic-ai"), "must nest under @anthropic-ai: {s}");
+        assert!(s.contains("claude-code-win32-x64"), "must hit the win32-x64 pkg: {s}");
+        // The nesting is claude-code -> node_modules -> claude-code-win32-x64, so
+        // exactly two `node_modules` segments appear.
+        assert_eq!(s.matches("node_modules").count(), 2, "exactly two node_modules: {s}");
     }
 }

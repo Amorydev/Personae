@@ -4,6 +4,8 @@ Personae's Windows code paths are **written from Claude's shipped code + Windows
 
 > **First step on a real Windows box: it must COMPILE.** `#[cfg(windows)]` code has never been through `cargo check`/`cargo build` on this repo. Expect to fix compile errors first (imports, `CommandExt`, arg shapes). Build with `cargo build` in `src-tauri`, or the full app with `npm run tauri build` / `cargo tauri build`.
 
+> **Field-confirmed (Windows user, v0.1.0, manual repro — 2026-08):** A Windows user reproduced the multi-account mechanism by hand and confirmed: (1) `CLAUDE_CONFIG_DIR` isolates accounts perfectly; (2) each config dir gets its own `.credentials.json`, `settings.json`, and `history.jsonl`; (3) the OAuth sign-in flow (browser link + code) works in a Windows terminal. This validates the *mechanism* `imp_win` is built on — but it is **not** an end-to-end test of Personae's own launchers/quoting, so every CLI box below still must pass.
+
 ## Environment / tips
 - Install the Claude Code CLI (`npm i -g @anthropic-ai/claude-code`, or the native installer). Confirm `where claude` resolves it.
 - Override binary resolution for testing with `set CLAUDE_CLI_BIN=C:\path\to\claude.cmd`.
@@ -21,8 +23,10 @@ Personae's Windows code paths are **written from Claude's shipped code + Windows
 ## CLI multi-account (`cli.rs`)
 - [ ] **Compiles** under `#[cfg(windows)]`.
 - [ ] `available()` → true when `claude` is installed (test BOTH the npm `.cmd` shim and, if present, a native `.exe`); false when absent (empty-state shows "Install the `claude` CLI…").
+- [ ] `claude_bin()` falls back to the nested `claude-code-win32-x64\claude.exe` when `where claude` and the flat candidates all miss (e.g. a GUI launch without npm on PATH) — see the pure `nested_win_claude_exe` helper.
 - [ ] `create` writes `%LOCALAPPDATA%\ClaudeProfilesCLI\apps\<slug>.cmd` + `<slug>.name`, and creates `%APPDATA%\ClaudeProfilesCLI\<slug>`.
 - [ ] `login` opens a console (`_login\<slug>.cmd` via `cmd /C start "" "<script>"`), `claude auth login` completes, and **`<config_dir>\.credentials.json` is created** — this is the whole premise (no Keychain on Windows; the credential store falls back to this plaintext file).
+  - `auth login` subcommand confirmed present on the CLI (`claude auth login` = "Sign in to your Anthropic account"), 2026-08. Re-confirm if the Windows box runs an older CLI.
 - [ ] After login, `list` reports `logged_in = true` (detected purely by `.credentials.json` presence) and the correct email (parsed from `<config_dir>\.claude.json`).
 - [ ] `launch` opens `claude` in a console **without** re-showing the first-run login/onboarding menu (confirms `mark_onboarded` wrote `hasCompletedOnboarding` into `.claude.json`).
 - [ ] **Concurrency:** two accounts logged in to different Claude logins are both usable at the same time (open both launchers); their emails differ; neither sees the other's history.
@@ -48,6 +52,6 @@ Personae's Windows code paths are **written from Claude's shipped code + Windows
 ---
 
 ## Cross-cutting
-- [ ] **Console flash:** on this branch (`feat/cli-multi-account`) `platform::run()` does **not** set `CREATE_NO_WINDOW`. The IDE path is fully covered locally: `detect_ides` (`where`) and `pick_folder` (`powershell`) go through `ide::imp_win::run_hidden`, and `open_in_ide`'s launch sets the flag directly — so no flashes from the IDE feature. **Still flashing:** the CLI engine's `cli::imp_win::claude_bin()` `where claude` probe (reached from `available`/`create`/`list`, and the UI refreshes on focus). The real fix is `CREATE_NO_WINDOW` in the shared `platform::run()` (which `main` already has) — bring that over (or reconcile onto `main`) to silence the CLI probe too. (The `cli::login`/`launch` windows are intentionally visible — that's where sign-in / the REPL happen.)
-- [ ] **Branch note:** this work is committed on `feat/cli-multi-account`, which is behind `main` (`main` has the newer `platform.rs` with `CREATE_NO_WINDOW` and a rewritten Desktop `windows.rs`). Decide how to reconcile before shipping.
+- [ ] **Console flash:** `platform::run()` on `main` sets `CREATE_NO_WINDOW` (`platform.rs`), and `cli::imp_win` + `ide::imp_win::run_hidden` route through hidden execution — so no console flashes are expected from the CLI `where claude` probe (reached from `available`/`create`/`list`, including focus refresh) or the IDE detection. Verify no residual flashes remain. (The `cli::login` / `cli::launch` windows are intentionally visible — that's where sign-in / the REPL happen.)
+- [ ] **Branch note:** the CLI multi-account work (PR #4, `feat/cli-multi-account`) is merged into `main`; `main` is the source of truth. Confirm no `CREATE_NO_WINDOW` regressions vs. `main`.
 - [ ] After all boxes pass: flip the landing page CLI badge from `macOS` to `macOS · Windows` and update the FAQ ("The Claude Code (CLI) accounts are macOS for now.").
