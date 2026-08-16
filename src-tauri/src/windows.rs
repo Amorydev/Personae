@@ -14,9 +14,16 @@
 use crate::platform::*;
 use std::fs;
 use std::path::PathBuf;
-use std::sync::OnceLock;
+use std::sync::{Mutex, OnceLock};
+use std::time::{Duration, Instant};
 
 static CLAUDE_EXE_CACHE: OnceLock<Option<PathBuf>> = OnceLock::new();
+
+// Short-TTL cache for the slow `Get-CimInstance Win32_Process` running-process
+// query (see all_running_commandlines). list() runs on every refresh, so this
+// lets rapid successive refreshes reuse one query; launch()/quit() invalidate it.
+static RUNNING_CACHE: OnceLock<Mutex<Option<(Instant, Vec<String>)>>> = OnceLock::new();
+const RUNNING_TTL: Duration = Duration::from_millis(1500);
 
 // Bundled PowerShell helpers (kept as inspectable files under scripts/win/,
 // embedded into the binary, and written out next to the profiles at runtime).
@@ -302,18 +309,33 @@ impl Win {
             .unwrap_or(0)
     }
 
-    /// Query all running `Claude.exe` process CommandLines in a single PowerShell call.
+    /// Query all running `Claude.exe` process CommandLines in a single PowerShell
+    /// call. Result is cached briefly (RUNNING_TTL): the CIM query is slow (~1-3s
+    /// cold) and list() runs on every refresh; launch()/quit() invalidate it so
+    /// state changes show promptly.
     fn all_running_commandlines(&self) -> Vec<String> {
+        let cache = RUNNING_CACHE.get_or_init(|| Mutex::new(None));
+        if let Ok(guard) = cache.lock() {
+            if let Some((t, v)) = guard.as_ref() {
+                if t.elapsed() < RUNNING_TTL {
+                    return v.clone();
+                }
+            }
+        }
         let ps = "Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'Claude.exe' } | Select-Object -ExpandProperty CommandLine";
         let (ok, out) = run(
             "powershell",
             &["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", ps],
         );
-        if ok {
+        let result: Vec<String> = if ok {
             out.lines().map(|s| s.to_string()).collect()
         } else {
             vec![]
+        };
+        if let Ok(mut guard) = cache.lock() {
+            *guard = Some((Instant::now(), result.clone()));
         }
+        result
     }
 
     /// pids of Claude processes whose CommandLine references this data dir.
@@ -336,6 +358,16 @@ impl Win {
 
 fn ps_quote(s: &str) -> String {
     s.replace('\'', "''")
+}
+
+/// Drop the running-process cache so the next list() re-queries — called after
+/// launch/quit change process state.
+fn invalidate_running_cache() {
+    if let Some(m) = RUNNING_CACHE.get() {
+        if let Ok(mut g) = m.lock() {
+            *g = None;
+        }
+    }
 }
 
 impl Platform for Win {
@@ -468,6 +500,7 @@ impl Platform for Win {
         let target = if lnk.exists() { lnk } else { cmd };
         let (ok, e) = run("cmd", &["/C", "start", "", &target.display().to_string()]);
         if ok {
+            invalidate_running_cache(); // new process — force a fresh running check
             Ok(())
         } else {
             Err(e)
@@ -488,6 +521,7 @@ impl Platform for Win {
         for pid in self.profile_pids(&data_dir) {
             run("taskkill", &["/PID", &pid, "/T", "/F"]);
         }
+        invalidate_running_cache(); // processes killed — force a fresh running check
         Ok(())
     }
 
