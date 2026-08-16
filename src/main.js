@@ -802,7 +802,16 @@ window.addEventListener("DOMContentLoaded", () => {
   $("#cli-create-cancel").onclick = closeModals;
   $("#cli-create-go").onclick = doCliCreate;
   // When returning from the Terminal (after `claude auth login`), re-detect login.
-  window.addEventListener("focus", () => { if (view === "cli") reloadCli(); });
+  // Throttled (leading-edge): fire on focus, but coalesce rapid focus/blur cycles
+  // so we don't re-run the CLI probes more than once per ~800ms.
+  let lastCliFocusReload = 0;
+  window.addEventListener("focus", () => {
+    if (view !== "cli") return;
+    const t = Date.now();
+    if (t - lastCliFocusReload < 800) return;
+    lastCliFocusReload = t;
+    reloadCli();
+  });
   $("#cli-del-cancel").onclick = closeModals;
   $("#cli-del-go").onclick = doCliDelete;
   $("#ide-pick").onclick = doPickFolder;
