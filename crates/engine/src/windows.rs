@@ -17,7 +17,7 @@ use std::path::PathBuf;
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
-static CLAUDE_EXE_CACHE: OnceLock<Option<PathBuf>> = OnceLock::new();
+static CLAUDE_EXE_CACHE: OnceLock<Mutex<Option<PathBuf>>> = OnceLock::new();
 
 // Short-TTL cache for the slow `Get-CimInstance Win32_Process` running-process
 // query (see all_running_commandlines). list() runs on every refresh, so this
@@ -226,7 +226,19 @@ impl Win {
     /// Locate Claude.exe. A user-set override (see `desktop_prefs`) always wins
     /// and is re-checked on every call (cheap: one JSON read + one stat) so a
     /// settings change takes effect immediately, without restarting Personae.
-    /// The auto-detected fallback is cached in memory via OnceLock.
+    ///
+    /// The auto-detected fallback is cached, but the cached path is verified
+    /// live (`is_file()`) before reuse, not blindly memoized forever: an
+    /// MSIX/Store install of Claude Desktop auto-updates in the background
+    /// under a *new, differently-versioned* `InstallLocation`
+    /// (`Claude_<version>_x64_...`) and deletes the old one — confirmed live
+    /// on this machine (Store auto-updated Claude mid-session; the previously
+    /// resolved path then failed with "the system cannot find the file").
+    /// Classic Squirrel installs dodge this via an unversioned `Claude.exe`
+    /// stub (see `exe_in_root`); MSIX InstallLocation has no such stub, so
+    /// staleness has to be caught here instead. Re-resolving is cheap in the
+    /// common case (one `is_file()` stat) and only pays the full multi-probe
+    /// resolution again right after such an update.
     fn claude_exe(&self) -> Option<PathBuf> {
         if let Some(p) = crate::desktop_prefs::get_custom_exe() {
             let pb = PathBuf::from(p);
@@ -234,9 +246,19 @@ impl Win {
                 return Some(pb);
             }
         }
-        CLAUDE_EXE_CACHE
-            .get_or_init(|| self.resolve_claude_exe())
-            .clone()
+        let cache = CLAUDE_EXE_CACHE.get_or_init(|| Mutex::new(None));
+        if let Ok(guard) = cache.lock() {
+            if let Some(p) = guard.as_ref() {
+                if p.is_file() {
+                    return Some(p.clone());
+                }
+            }
+        }
+        let resolved = self.resolve_claude_exe();
+        if let Ok(mut guard) = cache.lock() {
+            *guard = resolved.clone();
+        }
+        resolved
     }
 
     fn resolve_claude_exe(&self) -> Option<PathBuf> {
@@ -261,13 +283,11 @@ impl Win {
         if let Some(exe) = Self::claude_from_registry() {
             return Some(exe);
         }
-        // Last resort: the AppX/MSIX InstallLocation. Field report: this can
-        // resolve to a `C:\Program Files\WindowsApps\...` path that passes
-        // `is_file()` yet fails to launch ("the system cannot find the file")
-        // — MSIX packages generally aren't directly `CreateProcess`-able
-        // outside their own package context, unlike the exec-alias checked
-        // above. Kept only as a final guess, ranked behind every more-reliable
-        // signal; a user hitting this should set the override instead.
+        // Last resort: the AppX/MSIX InstallLocation — confirmed live (see
+        // `claude_exe`'s doc comment) that this DOES launch fine directly, so
+        // this is ranked last only because it's the one signal guaranteed to
+        // go stale on its own (Store auto-update), not because it's
+        // unreliable to execute.
         Self::claude_from_appx()
     }
 
