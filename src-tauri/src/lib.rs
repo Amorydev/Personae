@@ -1,99 +1,162 @@
-mod platform;
-#[cfg(target_os = "macos")]
-mod macos;
-#[cfg(windows)]
-mod windows;
-mod cli;
-mod ide;
-
+// All business logic lives in the personae-engine crate (see crates/engine —
+// deliberately has no tauri dependency, so it builds/tests independently of
+// the GUI stack). This crate is just the tauri-command translation layer.
+use personae_engine::{browser, cli, ide, platform, terminal};
 use platform::{active, Platform, Profile};
 
-#[tauri::command]
-fn claude_found() -> bool { active().claude_found() }
-
-#[tauri::command]
-fn list_profiles() -> Vec<Profile> { active().list() }
-
-#[tauri::command]
-fn create_profile(name: String, color: Option<String>, isolation: Option<String>) -> Result<(), String> {
-    active().create(&name, color, isolation.as_deref().unwrap_or("env"))
+/// Tauri v2 runs non-async `#[tauri::command]` handlers on the main UI thread. Every command
+/// below delegates its (synchronous, often process-spawning) body to a blocking-pool thread via
+/// this helper so a slow spawn (console creation, PowerShell startup, AV scanning, folder
+/// picker dialogs) can never freeze the window.
+async fn blocking<F, R>(f: F) -> R
+where
+    F: FnOnce() -> R + Send + 'static,
+    R: Send + 'static,
+{
+    tauri::async_runtime::spawn_blocking(f)
+        .await
+        .expect("background task panicked")
 }
 
 #[tauri::command]
-fn launch_profile(name: String) -> Result<(), String> { active().launch(&name) }
+async fn claude_found() -> bool { blocking(|| active().claude_found()).await }
 
 #[tauri::command]
-fn quit_profile(name: String) -> Result<(), String> { active().quit(&name) }
+async fn list_profiles() -> Vec<Profile> { blocking(|| active().list()).await }
 
 #[tauri::command]
-fn delete_profile(name: String, purge: bool) -> Result<(), String> { active().delete(&name, purge) }
-
-#[tauri::command]
-fn repair_profiles() -> Result<usize, String> { active().repair() }
-
-#[tauri::command]
-fn set_profile_color(name: String, color: String) -> Result<(), String> { active().set_color(&name, &color) }
-
-#[tauri::command]
-fn reveal_path(path: String) {
-    #[cfg(target_os = "macos")]
-    let _ = std::process::Command::new("open").arg(&path).spawn();
-    #[cfg(windows)]
-    let _ = std::process::Command::new("explorer").arg(&path).spawn();
+async fn create_profile(name: String, color: Option<String>, isolation: Option<String>) -> Result<(), String> {
+    blocking(move || active().create(&name, color, isolation.as_deref().unwrap_or("env"))).await
 }
 
 #[tauri::command]
-fn open_url(url: String) {
+async fn launch_profile(name: String) -> Result<(), String> { blocking(move || active().launch(&name)).await }
+
+#[tauri::command]
+async fn quit_profile(name: String) -> Result<(), String> { blocking(move || active().quit(&name)).await }
+
+#[tauri::command]
+async fn delete_profile(name: String, purge: bool) -> Result<(), String> { blocking(move || active().delete(&name, purge)).await }
+
+#[tauri::command]
+async fn repair_profiles() -> Result<usize, String> { blocking(|| active().repair()).await }
+
+#[tauri::command]
+async fn set_profile_color(name: String, color: String) -> Result<(), String> { blocking(move || active().set_color(&name, &color)).await }
+
+#[tauri::command]
+async fn reveal_path(path: String) {
+    blocking(move || {
+        #[cfg(target_os = "macos")]
+        let _ = std::process::Command::new("open").arg(&path).spawn();
+        #[cfg(windows)]
+        let _ = std::process::Command::new("explorer").arg(&path).spawn();
+    })
+    .await
+}
+
+#[tauri::command]
+async fn open_url(url: String) {
     // Opens http(s) / mailto in the user's default handler.
-    #[cfg(target_os = "macos")]
-    let _ = std::process::Command::new("open").arg(&url).spawn();
-    #[cfg(windows)]
-    let _ = std::process::Command::new("cmd").args(["/C", "start", "", &url]).spawn();
+    blocking(move || {
+        #[cfg(target_os = "macos")]
+        let _ = std::process::Command::new("open").arg(&url).spawn();
+        #[cfg(windows)]
+        let _ = std::process::Command::new("cmd").args(["/C", "start", "", &url]).spawn();
+    })
+    .await
 }
 
 #[tauri::command]
-fn cli_available() -> bool { cli::available() }
+async fn cli_available() -> bool { blocking(cli::available).await }
 
 #[tauri::command]
-fn list_cli_profiles() -> Vec<cli::CliProfile> { cli::list() }
+async fn list_cli_profiles() -> Vec<cli::CliProfile> { blocking(cli::list).await }
 
 #[tauri::command]
-fn create_cli_profile(name: String) -> Result<(), String> { cli::create(&name) }
+async fn create_cli_profile(name: String) -> Result<(), String> { blocking(move || cli::create(&name)).await }
 
 #[tauri::command]
-fn login_cli_profile(name: String) -> Result<(), String> { cli::login(&name) }
+async fn login_cli_profile(name: String) -> Result<(), String> { blocking(move || cli::login(&name)).await }
 
 #[tauri::command]
-fn launch_cli_profile(name: String) -> Result<(), String> { cli::launch(&name) }
-
-#[tauri::command]
-fn delete_cli_profile(name: String, purge: bool) -> Result<(), String> { cli::delete(&name, purge) }
-
-#[tauri::command]
-fn list_ides() -> Vec<ide::Ide> { ide::list_ides() }
-
-#[tauri::command]
-fn pick_folder() -> Result<Option<String>, String> { ide::pick_folder() }
-
-#[tauri::command]
-fn open_in_ide(account: String, ide_id: String, project_path: String) -> Result<(), String> {
-    ide::open_in_ide(&account, &ide_id, &project_path)
+async fn launch_cli_profile(name: String, project_path: Option<String>) -> Result<(), String> {
+    blocking(move || cli::launch(&name, project_path.as_deref())).await
 }
 
 #[tauri::command]
-fn list_workspaces() -> Vec<ide::Workspace> { ide::list_workspaces() }
+async fn get_launch_history(name: String) -> Vec<String> { blocking(move || cli::get_launch_history(&name)).await }
 
 #[tauri::command]
-fn save_workspace(account_slug: String, account_name: String, ide_id: String, ide_name: String,
+async fn delete_cli_profile(name: String, purge: bool) -> Result<(), String> { blocking(move || cli::delete(&name, purge)).await }
+
+#[tauri::command]
+async fn get_cli_provider_config(name: String) -> Result<cli::ProviderConfig, String> {
+    blocking(move || cli::get_provider_config(&name)).await
+}
+
+#[tauri::command]
+async fn set_cli_provider_config(name: String, config: cli::ProviderConfig) -> Result<(), String> {
+    blocking(move || cli::set_provider_config(&name, config)).await
+}
+
+#[tauri::command]
+async fn list_terminals() -> Vec<terminal::TerminalApp> { blocking(terminal::detect_terminals).await }
+
+#[tauri::command]
+async fn get_default_terminal() -> Option<String> { blocking(terminal::get_default_terminal).await }
+
+#[tauri::command]
+async fn set_default_terminal(id: Option<String>) -> Result<(), String> { blocking(move || terminal::set_default_terminal(id)).await }
+
+#[tauri::command]
+async fn get_custom_terminal_path() -> Option<String> { blocking(terminal::get_custom_terminal_path).await }
+
+#[tauri::command]
+async fn set_custom_terminal(path: String) -> Result<(), String> { blocking(move || terminal::set_custom_terminal(path)).await }
+
+#[tauri::command]
+async fn pick_terminal_exe() -> Result<Option<String>, String> { blocking(terminal::pick_terminal_exe).await }
+
+#[tauri::command]
+async fn list_browsers() -> Vec<browser::BrowserApp> { blocking(browser::detect_browsers).await }
+
+#[tauri::command]
+async fn get_browser_prefs() -> browser::BrowserPrefs { blocking(browser::get_prefs).await }
+
+#[tauri::command]
+async fn set_browser_prefs(browser_id: Option<String>, custom_path: Option<String>, reuse_profile: bool) -> Result<(), String> {
+    blocking(move || browser::set_prefs(browser_id, custom_path, reuse_profile)).await
+}
+
+#[tauri::command]
+async fn pick_browser_exe() -> Result<Option<String>, String> { blocking(browser::pick_browser_exe).await }
+
+#[tauri::command]
+async fn list_ides() -> Vec<ide::Ide> { blocking(ide::list_ides).await }
+
+#[tauri::command]
+async fn pick_folder() -> Result<Option<String>, String> { blocking(ide::pick_folder).await }
+
+#[tauri::command]
+async fn open_in_ide(account: String, ide_id: String, project_path: String) -> Result<(), String> {
+    blocking(move || ide::open_in_ide(&account, &ide_id, &project_path)).await
+}
+
+#[tauri::command]
+async fn list_workspaces() -> Vec<ide::Workspace> { blocking(ide::list_workspaces).await }
+
+#[tauri::command]
+async fn save_workspace(account_slug: String, account_name: String, ide_id: String, ide_name: String,
                   project_path: String, now: u64) -> Result<(), String> {
-    ide::save_workspace(&account_slug, &account_name, &ide_id, &ide_name, &project_path, now)
+    blocking(move || ide::save_workspace(&account_slug, &account_name, &ide_id, &ide_name, &project_path, now)).await
 }
 
 #[tauri::command]
-fn delete_workspace(id: String) -> Result<(), String> { ide::delete_workspace(&id) }
+async fn delete_workspace(id: String) -> Result<(), String> { blocking(move || ide::delete_workspace(&id)).await }
 
 #[tauri::command]
-fn open_workspace(id: String, now: u64) -> Result<(), String> { ide::open_workspace(&id, now) }
+async fn open_workspace(id: String, now: u64) -> Result<(), String> { blocking(move || ide::open_workspace(&id, now)).await }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -104,7 +167,11 @@ pub fn run() {
             launch_profile, quit_profile, delete_profile, repair_profiles,
             set_profile_color, reveal_path, open_url,
             cli_available, list_cli_profiles, create_cli_profile, login_cli_profile,
-            launch_cli_profile, delete_cli_profile,
+            launch_cli_profile, get_launch_history, delete_cli_profile,
+            get_cli_provider_config, set_cli_provider_config,
+            list_terminals, get_default_terminal, set_default_terminal,
+            get_custom_terminal_path, set_custom_terminal, pick_terminal_exe,
+            list_browsers, get_browser_prefs, set_browser_prefs, pick_browser_exe,
             list_ides, pick_folder, open_in_ide,
             list_workspaces, save_workspace, delete_workspace, open_workspace
         ])

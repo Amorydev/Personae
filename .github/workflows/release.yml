@@ -37,6 +37,18 @@ jobs:
       - name: Install frontend deps
         run: npm install
 
+      # Gate the release on the same checks a local `npm run build`/`npm run
+      # test`/`cargo test` pass locally — a tag push must not ship a build that
+      # fails type-checking, unit tests, or the Rust test suite.
+      - name: Frontend checks (type-check, build, unit tests)
+        run: |
+          npm run build
+          npm run test
+
+      - name: Backend tests (cargo)
+        working-directory: src-tauri
+        run: cargo test --locked
+
       - name: Build app (Tauri)
         uses: tauri-apps/tauri-action@v0
         with:

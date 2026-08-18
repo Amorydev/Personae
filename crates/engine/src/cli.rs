@@ -5,7 +5,7 @@
 // `Claude Code-credentials-<sha256(config_dir)[:8]>`), so distinct config dirs
 // give distinct, durable, concurrently-usable logins — with zero app-managed
 // secrets. No token injection, no shim, no setup-token capture.
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
 #[derive(Serialize, Clone)]
@@ -14,11 +14,149 @@ pub struct CliProfile {
     pub slug: String,
     pub config_dir: String,    // CLAUDE_CONFIG_DIR for this profile
     pub launcher_path: String, // the generated .command
-    pub logged_in: bool,       // an oauthAccount exists in <config_dir>/.claude.json
+    pub logged_in: bool,       // an oauthAccount exists in <config_dir>/.claude.json, OR an api_key provider is configured
     pub account_email: Option<String>, // parsed from <config_dir>/.claude.json if present
     pub data_size: String,
     pub created: Option<u64>,
     pub last_active: Option<u64>,
+    pub auth_mode: String,             // "oauth" | "api_key" — from <config_dir>/settings.json
+    pub provider_model: Option<String>, // display-only: the configured model, if any
+    // OAuth token lifetimes, unix ms, parsed from <config_dir>/.credentials.json's
+    // claudeAiOauth object (Windows only — macOS stores this in the Keychain, not
+    // a plaintext file, so these stay None there rather than dumping a secret
+    // just to read a non-secret expiry). `token_expires_at` is the short-lived
+    // access token (silently auto-refreshed by claude; not user-actionable).
+    // `refresh_expires_at` is what actually requires a real re-login once it lapses.
+    pub token_expires_at: Option<u64>,
+    pub refresh_expires_at: Option<u64>,
+    // Plan/quota tier — also from claudeAiOauth (same Windows-only caveat as
+    // the expiry fields above). This is the account's *plan tier*, not live
+    // usage telemetry — Claude Code doesn't expose remaining-quota numbers
+    // anywhere on disk, so we don't fabricate one.
+    pub subscription_type: Option<String>, // e.g. "max", "pro"
+    pub rate_limit_tier: Option<String>,   // e.g. "default_claude_max_20x"
+}
+
+/// Parse `claudeAiOauth.expiresAt` / `.refreshTokenExpiresAt` (unix ms) out of a
+/// `.credentials.json` body. Returns `(None, None)` for malformed/absent input —
+/// callers treat that the same as "unknown", not an error.
+fn extract_token_expiry(json: &str) -> (Option<u64>, Option<u64>) {
+    let v: serde_json::Value = match serde_json::from_str(json) {
+        Ok(v) => v,
+        Err(_) => return (None, None),
+    };
+    let oauth = v.get("claudeAiOauth");
+    let expires_at = oauth.and_then(|o| o.get("expiresAt")).and_then(|x| x.as_u64());
+    let refresh_expires_at = oauth.and_then(|o| o.get("refreshTokenExpiresAt")).and_then(|x| x.as_u64());
+    (expires_at, refresh_expires_at)
+}
+
+/// Parse `claudeAiOauth.subscriptionType` / `.rateLimitTier` out of a
+/// `.credentials.json` body — real fields confirmed present on a live account
+/// this session. `(None, None)` for malformed/absent input (e.g. api-key-mode
+/// accounts have no claudeAiOauth object at all).
+fn extract_plan_tier(json: &str) -> (Option<String>, Option<String>) {
+    let v: serde_json::Value = match serde_json::from_str(json) {
+        Ok(v) => v,
+        Err(_) => return (None, None),
+    };
+    let oauth = v.get("claudeAiOauth");
+    let subscription_type = oauth.and_then(|o| o.get("subscriptionType")).and_then(|x| x.as_str()).map(String::from);
+    let rate_limit_tier = oauth.and_then(|o| o.get("rateLimitTier")).and_then(|x| x.as_str()).map(String::from);
+    (subscription_type, rate_limit_tier)
+}
+
+/// The curated subset of `<config_dir>/settings.json` this app edits: enough to
+/// point a profile at a custom Anthropic-API-compatible provider (proxy, DeepSeek
+/// gateway, etc.) via env vars Claude Code itself already reads. Any other keys a
+/// user hand-edited into settings.json (permissions, theme, plugins, ...) are
+/// preserved untouched — see `save_provider_config`.
+#[derive(Serialize, Deserialize, Clone, Default)]
+pub struct ProviderConfig {
+    pub auth_mode: String, // "oauth" | "api_key"
+    pub base_url: Option<String>,
+    pub api_key: Option<String>,
+    pub model: Option<String>,
+    pub small_fast_model: Option<String>,
+}
+
+fn provider_settings_file(config_dir: &Path) -> PathBuf { config_dir.join("settings.json") }
+
+fn load_provider_config(config_dir: &Path) -> ProviderConfig {
+    let v: serde_json::Value = std::fs::read_to_string(provider_settings_file(config_dir)).ok()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_else(|| serde_json::json!({}));
+    let env = v.get("env").cloned().unwrap_or_else(|| serde_json::json!({}));
+    let get = |k: &str| env.get(k).and_then(|x| x.as_str()).map(|s| s.to_string()).filter(|s| !s.is_empty());
+    let api_key = get("ANTHROPIC_AUTH_TOKEN").or_else(|| get("ANTHROPIC_API_KEY"));
+    ProviderConfig {
+        auth_mode: if api_key.is_some() { "api_key".into() } else { "oauth".into() },
+        base_url: get("ANTHROPIC_BASE_URL"),
+        api_key,
+        model: get("ANTHROPIC_MODEL"),
+        small_fast_model: get("ANTHROPIC_SMALL_FAST_MODEL"),
+    }
+}
+
+/// Read-modify-write `<config_dir>/settings.json`, touching only the `env` keys
+/// this app owns. Mirrors `ide::merge_vscode_settings`'s preserve-everything-else
+/// approach. Switching back to `oauth` clears the api-key-mode env overrides so a
+/// stale token/base-url doesn't linger and silently redirect `claude auth login`.
+fn save_provider_config(config_dir: &Path, cfg: &ProviderConfig) -> Result<(), String> {
+    let f = provider_settings_file(config_dir);
+    let mut root: serde_json::Value = match std::fs::read_to_string(&f) {
+        Ok(s) if !s.trim().is_empty() => serde_json::from_str(&s)
+            .map_err(|e| format!("existing settings.json is not valid JSON: {e}"))?,
+        _ => serde_json::json!({}),
+    };
+    if !root.is_object() { return Err("settings.json root is not an object".into()); }
+    let obj = root.as_object_mut().unwrap();
+    let env_entry = obj.entry("env".to_string()).or_insert_with(|| serde_json::json!({}));
+    if !env_entry.is_object() { *env_entry = serde_json::json!({}); }
+    let env = env_entry.as_object_mut().unwrap();
+
+    let set_or_clear = |env: &mut serde_json::Map<String, serde_json::Value>, key: &str, val: &Option<String>| {
+        match val.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+            Some(v) => { env.insert(key.into(), serde_json::Value::String(v.to_string())); }
+            None => { env.remove(key); }
+        }
+    };
+
+    if cfg.auth_mode == "api_key" {
+        set_or_clear(env, "ANTHROPIC_AUTH_TOKEN", &cfg.api_key);
+        set_or_clear(env, "ANTHROPIC_BASE_URL", &cfg.base_url);
+        set_or_clear(env, "ANTHROPIC_MODEL", &cfg.model);
+        set_or_clear(env, "ANTHROPIC_SMALL_FAST_MODEL", &cfg.small_fast_model);
+    } else {
+        for key in ["ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_API_KEY", "ANTHROPIC_BASE_URL", "ANTHROPIC_MODEL", "ANTHROPIC_SMALL_FAST_MODEL"] {
+            env.remove(key);
+        }
+    }
+
+    std::fs::create_dir_all(config_dir).map_err(|e| e.to_string())?;
+    let body = serde_json::to_string_pretty(&root).map_err(|e| e.to_string())?;
+    std::fs::write(&f, body).map_err(|e| e.to_string())
+}
+
+#[cfg(target_os = "macos")]
+fn resolve_config_dir(slug: &str) -> PathBuf { imp::config_dir(slug) }
+#[cfg(windows)]
+fn resolve_config_dir(slug: &str) -> PathBuf { imp_win::config_dir(slug) }
+#[cfg(not(any(target_os = "macos", windows)))]
+fn resolve_config_dir(slug: &str) -> PathBuf { config_root().join(slug) }
+
+pub fn get_provider_config(name: &str) -> Result<ProviderConfig, String> {
+    let slug = crate::platform::slugify(name);
+    let dir = resolve_config_dir(&slug);
+    if !dir.exists() { return Err(format!("No such CLI account: {name}")); }
+    Ok(load_provider_config(&dir))
+}
+
+pub fn set_provider_config(name: &str, cfg: ProviderConfig) -> Result<(), String> {
+    let slug = crate::platform::slugify(name);
+    let dir = resolve_config_dir(&slug);
+    if !dir.exists() { return Err(format!("No such CLI account: {name}")); }
+    save_provider_config(&dir, &cfg)
 }
 
 /// Escape a string for safe interpolation inside a double-quoted bash string.
@@ -41,7 +179,14 @@ pub fn sh_quote(s: &str) -> String {
 /// The bash body of a profile launcher. Sets the profile's CLAUDE_CONFIG_DIR and
 /// execs the real claude CLI — claude resolves the per-profile login from its
 /// own Keychain slot (namespaced by config dir). On first run claude shows the
-/// login prompt; that one-time /login seeds the profile.
+/// login prompt; that one-time /login seeds the profile. Also clears
+/// CLAUDE_CODE_CHILD_SESSION: if Personae itself happens to be running under a
+/// Claude Code session (e.g. launched from its Bash tool during development),
+/// that marker is otherwise inherited by every process Personae spawns,
+/// including this launcher — the nested `claude` then silently disables its
+/// own transcript saving. Isolation is the whole point of this app, so a
+/// spawned account session should never inherit stray state from whatever
+/// shell happened to start Personae.
 pub fn render_launcher(name: &str, config_dir: &str, claude_bin: &str) -> String {
     let name_e = sh_dq_escape(name);
     let cfg_e = sh_dq_escape(config_dir);
@@ -52,6 +197,7 @@ pub fn render_launcher(name: &str, config_dir: &str, claude_bin: &str) -> String
          export CLAUDE_CONFIG_DIR=\"{cfg_e}\"\n\
          CLAUDE_BIN=\"{bin_e}\"\n\
          [ -x \"$CLAUDE_BIN\" ] || CLAUDE_BIN=\"$(command -v claude)\"\n\
+         unset CLAUDE_CODE_CHILD_SESSION\n\
          exec \"$CLAUDE_BIN\" \"$@\"\n"
     )
 }
@@ -115,6 +261,9 @@ fn cmd_comment_sanitize(s: &str) -> String {
 /// Windows `.cmd` launcher: set this account's CLAUDE_CONFIG_DIR, then `call`
 /// the real claude (`call`, because claude is usually a `.cmd` shim; without
 /// `call` control would not return to this script). CRLF line endings for cmd.
+/// Also clears CLAUDE_CODE_CHILD_SESSION — see `render_launcher`'s doc comment
+/// for why (isolation: a spawned account session must not inherit stray state
+/// from whatever shell happened to start Personae itself).
 #[allow(dead_code)] // used on Windows + in tests; unreferenced in the macOS build
 pub fn render_launcher_win(name: &str, config_dir: &str, claude_bin: &str) -> String {
     let name_c = cmd_comment_sanitize(name);
@@ -128,6 +277,7 @@ pub fn render_launcher_win(name: &str, config_dir: &str, claude_bin: &str) -> St
          set \"CLAUDE_CONFIG_DIR={cfg}\"\r\n\
          set \"CLAUDE_BIN={bin}\"\r\n\
          if not exist \"%CLAUDE_BIN%\" set \"CLAUDE_BIN=claude\"\r\n\
+         set \"CLAUDE_CODE_CHILD_SESSION=\"\r\n\
          call \"%CLAUDE_BIN%\" %*\r\n"
     )
 }
@@ -135,15 +285,23 @@ pub fn render_launcher_win(name: &str, config_dir: &str, claude_bin: &str) -> St
 /// One-shot interactive sign-in window: set env, run `claude auth login`,
 /// keep the console open so the user sees the result.
 #[allow(dead_code)] // used on Windows + in tests; unreferenced in the macOS build
-pub fn render_login_win(name: &str, config_dir: &str, claude_bin: &str) -> String {
+/// `browser`, if set, is written as `set "BROWSER=<path>"` so `claude auth
+/// login` opens that program for the OAuth link instead of the system
+/// default — see `browser.rs`.
+pub fn render_login_win(name: &str, config_dir: &str, claude_bin: &str, browser: Option<&str>) -> String {
     let name_c = cmd_comment_sanitize(name);
     let cfg = cmd_set_value_escape(config_dir);
     let bin = cmd_set_value_escape(claude_bin);
+    let browser_line = browser
+        .map(|b| format!("set \"BROWSER={}\"\r\n", cmd_set_value_escape(b)))
+        .unwrap_or_default();
     format!(
         "@echo off\r\n\
          set \"CLAUDE_CONFIG_DIR={cfg}\"\r\n\
          set \"CLAUDE_BIN={bin}\"\r\n\
          if not exist \"%CLAUDE_BIN%\" set \"CLAUDE_BIN=claude\"\r\n\
+         set \"CLAUDE_CODE_CHILD_SESSION=\"\r\n\
+         {browser_line}\
          echo Signing in to Claude Code for \"{name_c}\"...\r\n\
          echo.\r\n\
          call \"%CLAUDE_BIN%\" auth login\r\n\
@@ -374,7 +532,8 @@ mod imp_win {
         let dir = launcher_root().join("_login");
         fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
         let cfg = config_dir(slug).display().to_string();
-        let body = render_login_win(name, &cfg, &claude_bin_string());
+        let browser = crate::browser::prepare_login_browser(&dir);
+        let body = render_login_win(name, &cfg, &claude_bin_string(), browser.as_deref());
         let p = login_path(slug);
         fs::write(&p, body).map_err(|e| e.to_string())?;
         Ok(p)
@@ -396,6 +555,58 @@ pub fn imp_claude_bin_string() -> String {
 pub fn imp_claude_bin_string() -> String { imp_win::claude_bin_string() }
 #[cfg(not(any(target_os = "macos", windows)))]
 pub fn imp_claude_bin_string() -> String { "claude".to_string() }
+
+/// This account engine's per-OS settings root (same dir `workspaces.json` lives
+/// in). Exposed so `terminal.rs` can put `terminal-settings.json` next to it
+/// without duplicating the path logic.
+#[cfg(target_os = "macos")]
+pub(crate) fn config_root() -> PathBuf { imp::config_root() }
+#[cfg(windows)]
+pub(crate) fn config_root() -> PathBuf { imp_win::config_root() }
+#[cfg(not(any(target_os = "macos", windows)))]
+pub(crate) fn config_root() -> PathBuf { std::env::temp_dir().join("ClaudeProfilesCLI") }
+
+const LAUNCH_HISTORY_CAP: usize = 5;
+
+fn launch_history_file() -> PathBuf { config_root().join("launch-history.json") }
+
+fn load_launch_history_at(f: &Path) -> std::collections::HashMap<String, Vec<String>> {
+    std::fs::read_to_string(f).ok()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_default()
+}
+
+fn save_launch_history_at(f: &Path, h: &std::collections::HashMap<String, Vec<String>>) -> Result<(), String> {
+    if let Some(d) = f.parent() { std::fs::create_dir_all(d).map_err(|e| e.to_string())?; }
+    let body = serde_json::to_string_pretty(h).map_err(|e| e.to_string())?;
+    std::fs::write(f, body).map_err(|e| e.to_string())
+}
+
+/// Most-recent-first, deduped, capped at `LAUNCH_HISTORY_CAP`. Pure so it's
+/// independently testable from the file I/O around it.
+fn push_launch_location(mut list: Vec<String>, path: &str) -> Vec<String> {
+    list.retain(|p| p != path);
+    list.insert(0, path.to_string());
+    list.truncate(LAUNCH_HISTORY_CAP);
+    list
+}
+
+/// Recent project folders `launch(name, Some(path))` opened this account at —
+/// most-recent first, capped at 5. Empty (not an error) for an unknown/never-
+/// launched-with-a-folder account.
+pub fn get_launch_history(name: &str) -> Vec<String> {
+    let slug = crate::platform::slugify(name);
+    load_launch_history_at(&launch_history_file()).remove(&slug).unwrap_or_default()
+}
+
+/// Best-effort: a history-recording failure must never fail the launch itself.
+fn record_launch_location(slug: &str, path: &str) {
+    let f = launch_history_file();
+    let mut h = load_launch_history_at(&f);
+    let updated = push_launch_location(h.remove(slug).unwrap_or_default(), path);
+    h.insert(slug.to_string(), updated);
+    let _ = save_launch_history_at(&f, &h);
+}
 
 /// If this profile has a stored login, ensure its config dir is marked onboarded
 /// so interactive `claude` (via Launch or an IDE terminal) skips the first-run
@@ -452,12 +663,22 @@ pub fn login(name: &str) -> Result<(), String> {
 }
 
 #[cfg(target_os = "macos")]
-pub fn launch(name: &str) -> Result<(), String> {
+pub fn launch(name: &str, project_path: Option<&str>) -> Result<(), String> {
     let lp = imp::launcher_path(name);
     if !lp.exists() { return Err(format!("No such CLI profile: {name}")); }
     ensure_onboarded(name); // skip the first-run menu if already logged in
+    // `open` hands off to Terminal.app and exits on its own — unlike the
+    // Windows `cmd /C start` case, it isn't known to hang on Command::output().
+    // NOT wired to actually cd into project_path (unverified on macOS this
+    // session): `open <script>` starts Terminal.app at the script's own
+    // directory via LaunchServices, not the invoking process's cwd, so a
+    // Windows-style current_dir() fix wouldn't take effect here the same way.
     let (ok, e) = crate::platform::run("open", &[&lp.display().to_string()]);
-    if ok { Ok(()) } else { Err(e) }
+    if !ok { return Err(e); }
+    if let Some(p) = project_path {
+        record_launch_location(&crate::platform::slugify(name), p);
+    }
+    Ok(())
 }
 
 #[cfg(target_os = "macos")]
@@ -471,16 +692,22 @@ pub fn list() -> Vec<CliProfile> {
             let name = p.file_stem().unwrap_or_default().to_string_lossy().to_string();
             let slug = slugify(&name);
             let cfg = imp::config_dir(&slug);
+            // Self-heal the launcher script on every list — see the matching
+            // Windows list()'s comment for why this is safe/idempotent.
+            let _ = imp::write_launcher(&name, &slug);
             let data_size = if cfg.exists() {
                 let (_, o) = run("du", &["-sh", &cfg.display().to_string()]);
                 o.split('\t').next().unwrap_or("—").trim().to_string()
             } else { "—".into() };
             let account_email = std::fs::read_to_string(cfg.join(".claude.json")).ok()
                 .and_then(|j| extract_email(&j));
+            let provider = load_provider_config(&cfg);
             // Reliable signal = the login's Keychain slot exists (email is only a
-            // lazily-cached display value that may lag behind the actual login).
-            let logged_in = imp::login_present(&slug);
-            if logged_in { imp::mark_onboarded(&slug); } // self-heal: skip first-run menu once logged in
+            // lazily-cached display value that may lag behind the actual login) —
+            // OR an api-key provider is configured, which needs no OAuth at all.
+            let oauth_logged_in = imp::login_present(&slug);
+            if oauth_logged_in { imp::mark_onboarded(&slug); } // self-heal: skip first-run menu once logged in
+            let logged_in = oauth_logged_in || provider.auth_mode == "api_key";
             let md = std::fs::metadata(&cfg).ok();
             let created = md.as_ref().and_then(|m| m.created().ok()).and_then(to_secs);
             let last_active = md.as_ref().and_then(|m| m.modified().ok()).and_then(to_secs);
@@ -489,6 +716,11 @@ pub fn list() -> Vec<CliProfile> {
                 config_dir: cfg.display().to_string(),
                 launcher_path: p.display().to_string(),
                 logged_in, account_email, data_size, created, last_active,
+                auth_mode: provider.auth_mode, provider_model: provider.model,
+                // macOS keeps the OAuth credential in the Keychain, not a plaintext
+                // file — not read here (see the field doc comment on CliProfile).
+                token_expires_at: None, refresh_expires_at: None,
+                subscription_type: None, rate_limit_tier: None,
             });
         }
     }
@@ -531,6 +763,15 @@ pub fn create(name: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// A console launched via `cmd /C start ...` otherwise inherits Personae's own
+/// process cwd (wherever the app happened to be started from — not somewhere a
+/// user can usefully `cd` around from), so every Windows console this module
+/// opens starts at the user's home folder instead.
+#[cfg(windows)]
+fn user_home_dir() -> PathBuf {
+    std::env::var("USERPROFILE").map(PathBuf::from).unwrap_or_else(|_| PathBuf::from("C:\\"))
+}
+
 /// Open a one-shot console running `claude auth login` for this account's
 /// CLAUDE_CONFIG_DIR — the real sign-in. On Windows the credential is written to
 /// <config_dir>\.credentials.json (Keychain is absent), isolated per account.
@@ -543,27 +784,68 @@ pub fn login(name: &str) -> Result<(), String> {
     let script = imp_win::write_login_script(name, &slug)?;
     // Open the one-shot login console in its own window. TODO(verify) start quoting:
     // the empty "" is the (unused) window title so a quoted script path is not
-    // mistaken for the title.
-    let (ok, out) = crate::platform::run("cmd", &["/C", "start", "", &script.display().to_string()]);
-    if ok { Ok(()) } else { Err(out.trim().to_string()) }
+    // mistaken for the title. spawn_detached_in, not run_in: this opens a
+    // long-lived interactive console — see that helper's doc comment.
+    crate::platform::spawn_detached_in(
+        "cmd", &["/C", "start", "", &script.display().to_string()], &user_home_dir(),
+    )
 }
 
 #[cfg(windows)]
-pub fn launch(name: &str) -> Result<(), String> {
+pub fn launch(name: &str, project_path: Option<&str>) -> Result<(), String> {
     use crate::platform::slugify;
     let slug = slugify(name);
     let lp = imp_win::launcher_path(&slug);
     if !lp.exists() { return Err(format!("No such CLI account: {name}")); }
     ensure_onboarded(name); // skip the first-run menu if already logged in
     // New interactive console running the launcher (keeps window; user gets a
-    // claude REPL). `cmd /K` keeps the window open. Pass the launcher path BARE
-    // (no manual quotes): std::process::Command already quotes each arg, so a
-    // pre-quoted string would reach cmd as literal quotes. TODO(verify) start/K.
-    let (ok, out) = crate::platform::run(
-        "cmd",
-        &["/C", "start", "", "cmd", "/K", &lp.display().to_string()],
-    );
-    if ok { Ok(()) } else { Err(out.trim().to_string()) }
+    // claude REPL). Pass the launcher path BARE (no manual quotes):
+    // std::process::Command already quotes each arg, so a pre-quoted string
+    // would reach the shell as literal quotes. Which terminal opens it is the
+    // user's saved preference (terminal.rs); default/unset/removed picks fall
+    // through to today's bare `cmd`. cwd is the chosen project folder if any,
+    // else the user's home — either way, never Personae's own launch dir.
+    let lp_str = lp.display().to_string();
+    let cwd = match project_path {
+        Some(p) => PathBuf::from(p),
+        None => user_home_dir(),
+    };
+    // spawn_detached_in, not run_in: this opens a long-lived interactive
+    // console — see that helper's doc comment (confirmed live: the equivalent
+    // Desktop-launch call hung 60+s under `run`/`run_in`'s Command::output()).
+    let result = match crate::terminal::get_default_terminal().as_deref() {
+        Some("powershell") => crate::platform::spawn_detached_in(
+            "cmd",
+            &["/C", "start", "", "powershell", "-NoExit", "-Command",
+              &format!("& '{}'", lp_str.replace('\'', "''"))],
+            &cwd,
+        ),
+        Some("windows-terminal") if crate::terminal::windows_terminal_available() => crate::platform::spawn_detached_in(
+            "wt.exe",
+            &["cmd", "/K", &lp_str],
+            &cwd,
+        ),
+        Some("custom") => match crate::terminal::get_custom_terminal_path() {
+            // Best-effort: pass the launcher path as a bare argument. Works for
+            // terminals that accept "open here and run me" positionally (matches
+            // how the cmd/wt branches above invoke the launcher); not every
+            // third-party terminal's CLI accepts this — there's no universal
+            // convention across terminal emulators.
+            Some(custom) => crate::platform::spawn_detached_in(&custom, &[&lp_str], &cwd),
+            None => crate::platform::spawn_detached_in("cmd", &["/C", "start", "", "cmd", "/K", &lp_str], &cwd),
+        },
+        _ => crate::platform::spawn_detached_in(
+            "cmd",
+            &["/C", "start", "", "cmd", "/K", &lp_str],
+            &cwd,
+        ),
+    };
+    if result.is_ok() {
+        if let Some(p) = project_path {
+            record_launch_location(&slug, p);
+        }
+    }
+    result
 }
 
 #[cfg(windows)]
@@ -579,11 +861,26 @@ pub fn list() -> Vec<CliProfile> {
                 .map(|s| s.trim().to_string()).filter(|s| !s.is_empty())
                 .unwrap_or_else(|| slug.clone());
             let cfg = imp_win::config_dir(&slug);
+            // Self-heal the launcher script on every list, same spirit as the
+            // mark_onboarded self-heal below: `write_launcher` is a pure function
+            // of (name, slug) and deterministically regenerates identical content
+            // for an unchanged account, so this is safe/idempotent — but it means
+            // an *existing* account's launcher always reflects the latest
+            // generator code (e.g. the CLAUDE_CODE_CHILD_SESSION clear-line) after
+            // an app update, not just newly-created accounts.
+            let _ = imp_win::write_launcher(&name, &slug);
             let data_size = if cfg.exists() { human_size(dir_size_bytes(&cfg)) } else { "—".into() };
             let account_email = std::fs::read_to_string(cfg.join(".claude.json")).ok()
                 .and_then(|j| extract_email(&j));
-            let logged_in = imp_win::login_present(&slug);
-            if logged_in { imp_win::mark_onboarded(&slug); } // self-heal: skip first-run menu
+            let credentials_json = std::fs::read_to_string(cfg.join(".credentials.json")).ok();
+            let (token_expires_at, refresh_expires_at) = credentials_json.as_deref()
+                .map(extract_token_expiry).unwrap_or((None, None));
+            let (subscription_type, rate_limit_tier) = credentials_json.as_deref()
+                .map(extract_plan_tier).unwrap_or((None, None));
+            let provider = load_provider_config(&cfg);
+            let oauth_logged_in = imp_win::login_present(&slug);
+            if oauth_logged_in { imp_win::mark_onboarded(&slug); } // self-heal: skip first-run menu
+            let logged_in = oauth_logged_in || provider.auth_mode == "api_key";
             let md = std::fs::metadata(&cfg).ok();
             let created = md.as_ref().and_then(|m| m.created().ok()).and_then(to_secs);
             let last_active = md.as_ref().and_then(|m| m.modified().ok()).and_then(to_secs);
@@ -592,6 +889,9 @@ pub fn list() -> Vec<CliProfile> {
                 config_dir: cfg.display().to_string(),
                 launcher_path: p.display().to_string(),
                 logged_in, account_email, data_size, created, last_active,
+                auth_mode: provider.auth_mode, provider_model: provider.model,
+                token_expires_at, refresh_expires_at,
+                subscription_type, rate_limit_tier,
             });
         }
     }
@@ -629,7 +929,7 @@ pub fn create(_name: &str) -> Result<(), String> { Err(NOT_YET.into()) }
 #[cfg(not(any(target_os = "macos", windows)))]
 pub fn login(_name: &str) -> Result<(), String> { Err(NOT_YET.into()) }
 #[cfg(not(any(target_os = "macos", windows)))]
-pub fn launch(_name: &str) -> Result<(), String> { Err(NOT_YET.into()) }
+pub fn launch(_name: &str, _project_path: Option<&str>) -> Result<(), String> { Err(NOT_YET.into()) }
 #[cfg(not(any(target_os = "macos", windows)))]
 pub fn delete(_name: &str, _purge: bool) -> Result<(), String> { Err(NOT_YET.into()) }
 
@@ -680,6 +980,61 @@ mod tests {
         assert_eq!(extract_email(r#"{"no":"email"}"#), None);
     }
 
+    #[test]
+    fn extract_token_expiry_reads_credentials_json_shape() {
+        // Shape verified live against a real Windows .credentials.json this session
+        // (field names/nesting only — values below are placeholders, not real tokens).
+        let j = r#"{"claudeAiOauth":{"accessToken":"x","refreshToken":"y","expiresAt":1787089852342,"refreshTokenExpiresAt":1789315069342,"scopes":[]}}"#;
+        assert_eq!(extract_token_expiry(j), (Some(1787089852342), Some(1789315069342)));
+        assert_eq!(extract_token_expiry(r#"{"no":"oauth"}"#), (None, None));
+        assert_eq!(extract_token_expiry("not json"), (None, None));
+    }
+
+    #[test]
+    fn extract_plan_tier_reads_subscription_and_rate_limit() {
+        // Shape verified live against a real Windows .credentials.json this session.
+        let j = r#"{"claudeAiOauth":{"subscriptionType":"max","rateLimitTier":"default_claude_max_20x"}}"#;
+        assert_eq!(extract_plan_tier(j), (Some("max".into()), Some("default_claude_max_20x".into())));
+        // api-key-mode accounts have no claudeAiOauth object at all.
+        assert_eq!(extract_plan_tier(r#"{"no":"oauth"}"#), (None, None));
+    }
+
+    #[test]
+    fn push_launch_location_dedupes_orders_and_caps() {
+        let list = push_launch_location(vec![], "/a");
+        let list = push_launch_location(list, "/b");
+        let list = push_launch_location(list, "/c");
+        assert_eq!(list, vec!["/c", "/b", "/a"]);
+
+        // re-pushing an existing entry moves it to the front instead of duplicating
+        let list = push_launch_location(list, "/a");
+        assert_eq!(list, vec!["/a", "/c", "/b"]);
+
+        let list = push_launch_location(list, "/d");
+        let list = push_launch_location(list, "/e");
+        let list = push_launch_location(list, "/f"); // 6th entry — must evict the oldest
+        assert_eq!(list.len(), 5);
+        assert_eq!(list[0], "/f");
+        assert!(!list.contains(&"/b".to_string()), "oldest entry should have been evicted: {list:?}");
+    }
+
+    #[test]
+    fn launch_history_roundtrips_per_account_and_ignores_unknown() {
+        let f = std::env::temp_dir().join(format!("launch-history-{}.json", std::process::id()));
+        let _ = std::fs::remove_file(&f);
+
+        let mut h = load_launch_history_at(&f);
+        assert!(h.is_empty());
+        h.insert("work".into(), push_launch_location(vec![], "/projects/a"));
+        save_launch_history_at(&f, &h).unwrap();
+
+        let loaded = load_launch_history_at(&f);
+        assert_eq!(loaded.get("work"), Some(&vec!["/projects/a".to_string()]));
+        assert_eq!(loaded.get("unknown-account"), None);
+
+        std::fs::remove_file(&f).ok();
+    }
+
     // ---- Windows pure-helper tests (run on macOS) ------------------------
 
     #[test]
@@ -701,11 +1056,20 @@ mod tests {
 
     #[test]
     fn win_login_script_runs_auth_login_and_pauses() {
-        let s = render_login_win("Work", r"C:\cfg\work", r"C:\bin\claude.cmd");
+        let s = render_login_win("Work", r"C:\cfg\work", r"C:\bin\claude.cmd", None);
         assert!(s.contains("set \"CLAUDE_CONFIG_DIR=C:\\cfg\\work\""));
         assert!(s.contains("set \"CLAUDE_BIN=C:\\bin\\claude.cmd\""));
         assert!(s.contains("call \"%CLAUDE_BIN%\" auth login"));
         assert!(s.contains("pause"));
+        assert!(!s.contains("BROWSER"));
+    }
+
+    #[test]
+    fn win_login_script_sets_browser_when_provided() {
+        let s = render_login_win("Work", r"C:\cfg\work", r"C:\bin\claude.cmd", Some(r"C:\browsers\chrome.exe"));
+        assert!(s.contains("set \"BROWSER=C:\\browsers\\chrome.exe\""));
+        // BROWSER must be set before the auth login call actually reads it.
+        assert!(s.find("BROWSER=").unwrap() < s.find("auth login").unwrap());
     }
 
     #[test]

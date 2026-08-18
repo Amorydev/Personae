@@ -466,12 +466,12 @@ impl Platform for Win {
         // Prefer the .lnk (carries the AUMID + icon); fall back to the raw .cmd.
         let lnk = self.lnk_path(name);
         let target = if lnk.exists() { lnk } else { cmd };
-        let (ok, e) = run("cmd", &["/C", "start", "", &target.display().to_string()]);
-        if ok {
-            Ok(())
-        } else {
-            Err(e)
-        }
+        // spawn_detached_in, not run: Claude Desktop is a long-lived process that
+        // would otherwise hang `run`'s Command::output() indefinitely — see that
+        // helper's doc comment (confirmed live: this exact call hung 60+s before
+        // the fix, launching a real Claude Desktop instance).
+        let home = std::env::var("USERPROFILE").map(PathBuf::from).unwrap_or_else(|_| PathBuf::from("C:\\"));
+        spawn_detached_in("cmd", &["/C", "start", "", &target.display().to_string()], &home)
     }
 
     fn quit(&self, name: &str) -> Result<(), String> {

@@ -361,7 +361,10 @@ pub fn open_workspace(id: &str, now: u64) -> Result<(), String> {
 pub fn list_ides() -> Vec<Ide> { imp_win::detect_ides() }
 
 /// Native folder picker via PowerShell's WinForms FolderBrowserDialog. Returns
-/// None if the user cancels (the dialog prints nothing on Cancel).
+/// None if the user cancels (the dialog prints nothing on Cancel). Runs under
+/// `pwsh` when available so the dialog is the modern Explorer-style picker,
+/// not Windows PowerShell 5.1's legacy tree view — see
+/// `platform::run_powershell_hidden`'s doc comment.
 #[cfg(windows)]
 pub fn pick_folder() -> Result<Option<String>, String> {
     // -STA is required for WinForms dialogs. The script loads System.Windows.Forms,
@@ -371,8 +374,7 @@ pub fn pick_folder() -> Result<Option<String>, String> {
     let script = "Add-Type -AssemblyName System.Windows.Forms; \
                   $f=New-Object System.Windows.Forms.FolderBrowserDialog; \
                   if($f.ShowDialog() -eq 'OK'){Write-Output $f.SelectedPath}";
-    let (ok, out) = imp_win::run_hidden(
-        "powershell",
+    let (ok, out) = crate::platform::run_powershell_hidden(
         &["-STA", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script],
     );
     // A non-zero exit is a genuine failure — don't let it masquerade as a cancel.

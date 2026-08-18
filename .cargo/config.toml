@@ -1,0 +1,5 @@
+# Keeps the workspace's shared build output at src-tauri/target (matching
+# bin/personae.js's hardcoded exe path and src-tauri/.gitignore) instead of
+# Cargo's default of a target/ dir at the workspace root.
+[build]
+target-dir = "src-tauri/target"
