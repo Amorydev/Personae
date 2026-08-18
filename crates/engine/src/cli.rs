@@ -30,11 +30,20 @@ pub struct CliProfile {
     pub token_expires_at: Option<u64>,
     pub refresh_expires_at: Option<u64>,
     // Plan/quota tier — also from claudeAiOauth (same Windows-only caveat as
-    // the expiry fields above). This is the account's *plan tier*, not live
-    // usage telemetry — Claude Code doesn't expose remaining-quota numbers
-    // anywhere on disk, so we don't fabricate one.
+    // the expiry fields above). This is the account's *plan tier*, a label
+    // like "max"/"default_claude_max_20x", not a live number.
     pub subscription_type: Option<String>, // e.g. "max", "pro"
     pub rate_limit_tier: Option<String>,   // e.g. "default_claude_max_20x"
+    // Real, live usage percentages — parsed from `<config_dir>/.claude.json`'s
+    // `cachedUsageUtilization.utilization` object (present on both platforms;
+    // the CLI itself populates and periodically refreshes this cache, not
+    // Personae). `None` until the account has made at least one real request
+    // (never fabricated). `session_usage_pct` is the rolling 5-hour window;
+    // `weekly_usage_pct` is `utilization.limits[].percent` for the
+    // `kind: "weekly_all"` entry (the plan's overall weekly cap, distinct from
+    // a per-model `weekly_scoped` entry).
+    pub session_usage_pct: Option<u32>,
+    pub weekly_usage_pct: Option<u32>,
 }
 
 /// Parse `claudeAiOauth.expiresAt` / `.refreshTokenExpiresAt` (unix ms) out of a
@@ -225,6 +234,34 @@ pub fn extract_email(json: &str) -> Option<String> {
     let end = after.find('"')?;
     let email = &after[..end];
     if email.contains('@') { Some(email.to_string()) } else { None }
+}
+
+/// Parse live usage percentages out of a `.claude.json` body's
+/// `cachedUsageUtilization.utilization` object — shape confirmed live against
+/// a real account this session: `.five_hour.utilization` (0-100, rolling
+/// session window) and `.limits[]` (an array of `{kind, group, percent, ...}`
+/// entries; `kind: "weekly_all"` is the plan's overall weekly cap). Returns
+/// `(None, None)` for malformed/absent input, e.g. an account that has never
+/// made a real request yet, or an API-key-mode account (no Claude usage cap).
+pub fn extract_usage_utilization(json: &str) -> (Option<u32>, Option<u32>) {
+    let v: serde_json::Value = match serde_json::from_str(json) {
+        Ok(v) => v,
+        Err(_) => return (None, None),
+    };
+    let util = v.get("cachedUsageUtilization").and_then(|c| c.get("utilization"));
+    let session = util
+        .and_then(|u| u.get("five_hour"))
+        .and_then(|f| f.get("utilization"))
+        .and_then(|x| x.as_u64())
+        .map(|x| x as u32);
+    let weekly = util
+        .and_then(|u| u.get("limits"))
+        .and_then(|l| l.as_array())
+        .and_then(|arr| arr.iter().find(|e| e.get("kind").and_then(|k| k.as_str()) == Some("weekly_all")))
+        .and_then(|e| e.get("percent"))
+        .and_then(|x| x.as_u64())
+        .map(|x| x as u32);
+    (session, weekly)
 }
 
 // ---- cross-platform Windows-launcher builders (pure; unit-tested on macOS) --
@@ -767,8 +804,10 @@ pub fn list() -> Vec<CliProfile> {
                 let (_, o) = run("du", &["-sh", &cfg.display().to_string()]);
                 o.split('\t').next().unwrap_or("—").trim().to_string()
             } else { "—".into() };
-            let account_email = std::fs::read_to_string(cfg.join(".claude.json")).ok()
-                .and_then(|j| extract_email(&j));
+            let claude_json = std::fs::read_to_string(cfg.join(".claude.json")).ok();
+            let account_email = claude_json.as_deref().and_then(extract_email);
+            let (session_usage_pct, weekly_usage_pct) = claude_json.as_deref()
+                .map(extract_usage_utilization).unwrap_or((None, None));
             let provider = load_provider_config(&cfg);
             // Reliable signal = the login's Keychain slot exists (email is only a
             // lazily-cached display value that may lag behind the actual login) —
@@ -789,6 +828,7 @@ pub fn list() -> Vec<CliProfile> {
                 // file — not read here (see the field doc comment on CliProfile).
                 token_expires_at: None, refresh_expires_at: None,
                 subscription_type: None, rate_limit_tier: None,
+                session_usage_pct, weekly_usage_pct,
             });
         }
     }
@@ -939,8 +979,10 @@ pub fn list() -> Vec<CliProfile> {
             // an app update, not just newly-created accounts.
             let _ = imp_win::write_launcher(&name, &slug);
             let data_size = if cfg.exists() { human_size(dir_size_bytes(&cfg)) } else { "—".into() };
-            let account_email = std::fs::read_to_string(cfg.join(".claude.json")).ok()
-                .and_then(|j| extract_email(&j));
+            let claude_json = std::fs::read_to_string(cfg.join(".claude.json")).ok();
+            let account_email = claude_json.as_deref().and_then(extract_email);
+            let (session_usage_pct, weekly_usage_pct) = claude_json.as_deref()
+                .map(extract_usage_utilization).unwrap_or((None, None));
             let credentials_json = std::fs::read_to_string(cfg.join(".credentials.json")).ok();
             let (token_expires_at, refresh_expires_at) = credentials_json.as_deref()
                 .map(extract_token_expiry).unwrap_or((None, None));
@@ -961,6 +1003,7 @@ pub fn list() -> Vec<CliProfile> {
                 auth_mode: provider.auth_mode, provider_model: provider.model,
                 token_expires_at, refresh_expires_at,
                 subscription_type, rate_limit_tier,
+                session_usage_pct, weekly_usage_pct,
             });
         }
     }
@@ -1040,6 +1083,19 @@ mod tests {
             login_keychain_service_for_dir("/Users/amoryzenith/Library/Application Support/ClaudeProfilesCLI/proto1"),
             "Claude Code-credentials-5f560a22"
         );
+    }
+
+    #[test]
+    fn extract_usage_utilization_reads_session_and_weekly_all() {
+        // Shape verified live against a real account's .claude.json this session.
+        let j = r#"{"cachedUsageUtilization":{"utilization":{"five_hour":{"utilization":29},"limits":[
+            {"kind":"session","group":"session","percent":29},
+            {"kind":"weekly_all","group":"weekly","percent":7},
+            {"kind":"weekly_scoped","group":"weekly","percent":2,"scope":{"model":{"display_name":"Fable"}}}
+        ]}}}"#;
+        assert_eq!(extract_usage_utilization(j), (Some(29), Some(7)));
+        assert_eq!(extract_usage_utilization(r#"{"no":"usage"}"#), (None, None));
+        assert_eq!(extract_usage_utilization("not json"), (None, None));
     }
 
     #[test]

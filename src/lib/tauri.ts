@@ -15,17 +15,18 @@ const MOCK: DesktopProfile[] = [
 ];
 
 const MOCK_CLI: CliProfile[] = [
-  { name: "Work CLI", slug: "work-cli", config_dir: "/Users/you/Library/Application Support/ClaudeProfilesCLI/work-cli",
-    launcher_path: "/Users/you/Applications/Claude Profiles CLI/Work CLI.command",
+  { name: "Work CLI", slug: "work-cli", config_dir: "/Users/you/Library/Application Support/Personae/CLI/work-cli",
+    launcher_path: "/Users/you/Applications/Personae/CLI/Work CLI.command",
     logged_in: true, account_email: "work@corp.com", data_size: "12M", created: nowSecs() - 86400, last_active: nowSecs() - 300,
     auth_mode: "oauth", provider_model: null,
     token_expires_at: (nowSecs() + 3600) * 1000, refresh_expires_at: (nowSecs() + 86400 * 60) * 1000,
-    subscription_type: "max", rate_limit_tier: "default_claude_max_20x" },
-  { name: "Personal CLI", slug: "personal-cli", config_dir: "/Users/you/Library/Application Support/ClaudeProfilesCLI/personal-cli",
-    launcher_path: "/Users/you/Applications/Claude Profiles CLI/Personal CLI.command",
+    subscription_type: "max", rate_limit_tier: "default_claude_max_20x",
+    session_usage_pct: 29, weekly_usage_pct: 7 },
+  { name: "Personal CLI", slug: "personal-cli", config_dir: "/Users/you/Library/Application Support/Personae/CLI/personal-cli",
+    launcher_path: "/Users/you/Applications/Personae/CLI/Personal CLI.command",
     logged_in: false, account_email: null, data_size: "0B", created: nowSecs() - 3600, last_active: null,
     auth_mode: "oauth", provider_model: null, token_expires_at: null, refresh_expires_at: null,
-    subscription_type: null, rate_limit_tier: null },
+    subscription_type: null, rate_limit_tier: null, session_usage_pct: null, weekly_usage_pct: null },
 ];
 
 const MOCK_WS: Workspace[] = [
@@ -85,11 +86,11 @@ export async function invoke<T = unknown>(cmd: string, args?: Record<string, unk
     case "create_cli_profile": {
       const name = args!.name as string;
       const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
-      MOCK_CLI.push({ name, slug, config_dir: `/Users/you/Library/Application Support/ClaudeProfilesCLI/${slug}`,
-        launcher_path: `/Users/you/Applications/Claude Profiles CLI/${name}.command`,
+      MOCK_CLI.push({ name, slug, config_dir: `/Users/you/Library/Application Support/Personae/CLI/${slug}`,
+        launcher_path: `/Users/you/Applications/Personae/CLI/${name}.command`,
         logged_in: false, account_email: null, data_size: "0B", created: nowSecs(), last_active: nowSecs(),
         auth_mode: "oauth", provider_model: null, token_expires_at: null, refresh_expires_at: null,
-        subscription_type: null, rate_limit_tier: null });
+        subscription_type: null, rate_limit_tier: null, session_usage_pct: null, weekly_usage_pct: null });
       return undefined as T;
     }
     case "login_cli_profile": console.log("login", args!.name); return undefined as T;

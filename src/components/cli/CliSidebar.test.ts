@@ -22,6 +22,8 @@ function makeProfile(overrides: Partial<CliProfile>): CliProfile {
     refresh_expires_at: null,
     subscription_type: null,
     rate_limit_tier: null,
+    session_usage_pct: null,
+    weekly_usage_pct: null,
     ...overrides,
   };
 }

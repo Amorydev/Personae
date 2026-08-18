@@ -27,6 +27,8 @@ export interface CliProfile {
   refresh_expires_at: number | null; // unix ms — when this actually requires a real re-login
   subscription_type: string | null; // e.g. "max", "pro" — plan tier, not live usage
   rate_limit_tier: string | null; // e.g. "default_claude_max_20x"
+  session_usage_pct: number | null; // 0-100, rolling 5-hour window; null until the account's made a real request
+  weekly_usage_pct: number | null; // 0-100, plan's overall weekly cap
 }
 
 export interface ProviderConfig {

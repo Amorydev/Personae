@@ -3,7 +3,7 @@ import { computed } from "vue";
 import { storeToRefs } from "pinia";
 import { useCliStore } from "../../stores/cli";
 import { useUiStore } from "../../stores/ui";
-import { cliColor, prettySize, relTime, createdLabel, sessionExpiry, planLabel } from "../../lib/format";
+import { cliColor, prettySize, relTime, createdLabel, sessionExpiry, usageLabel } from "../../lib/format";
 import { invoke } from "../../lib/tauri";
 import WorkspaceList from "./WorkspaceList.vue";
 import LoadingState from "../LoadingState.vue";
@@ -86,7 +86,7 @@ function openIde() {
       <div><span>Last active</span><strong>{{ relTime(cliCurrent.last_active) }}</strong></div>
       <div><span>Created</span><strong>{{ createdLabel(cliCurrent.created) }}</strong></div>
       <div><span>Session expires</span><strong :class="{ 'text-warn': expiry?.warn }">{{ expiry ? expiryColumnValue : "—" }}</strong></div>
-      <div><span>Usage</span><strong>{{ planLabel(cliCurrent.subscription_type, cliCurrent.rate_limit_tier) }}</strong></div>
+      <div><span>Usage</span><strong>{{ usageLabel(cliCurrent.session_usage_pct, cliCurrent.weekly_usage_pct, cliCurrent.subscription_type, cliCurrent.rate_limit_tier) }}</strong></div>
     </section>
     <section v-else class="cli-setup-card">
       <div class="setup-icon" aria-hidden="true">↳</div>

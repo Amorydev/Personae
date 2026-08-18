@@ -77,6 +77,24 @@ export function planLabel(subscriptionType: string | null | undefined, rateLimit
     .join(" ");
 }
 
+// Live usage percentages (Claude Code's own `/usage` cache, refreshed by the
+// CLI itself — see `cli::extract_usage_utilization`'s doc comment for the
+// on-disk shape). Falls back to the static plan-tier label only when neither
+// percentage has been populated yet, e.g. an account that's never made a real
+// request — never fabricates a number.
+export function usageLabel(
+  sessionPct: number | null | undefined,
+  weeklyPct: number | null | undefined,
+  subscriptionType: string | null | undefined,
+  rateLimitTier: string | null | undefined
+): string {
+  if (sessionPct == null && weeklyPct == null) return planLabel(subscriptionType, rateLimitTier);
+  const parts: string[] = [];
+  if (sessionPct != null) parts.push(`${sessionPct}% session`);
+  if (weeklyPct != null) parts.push(`${weeklyPct}% week`);
+  return parts.join(" · ");
+}
+
 export function cliColor(p: CliProfile | DesktopProfile | null | undefined): string {
   const key = (p as CliProfile)?.slug || p?.name || "cli";
   let hash = 2166136261;

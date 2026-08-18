@@ -501,6 +501,23 @@ impl Platform for Win {
                 .filter(|s| !s.is_empty())
                 .unwrap_or_else(|| slug.clone());
             let data_dir = self.data_root().join(&slug);
+            // Self-heal: `write_launcher` bakes the resolved claude.exe path into
+            // this `.cmd` at create() time. An MSIX/Store install can auto-update
+            // out from under an *already-written* launcher just as easily as it
+            // can go stale in the in-memory cache (see `claude_exe`'s doc comment)
+            // — rewriting the cache doesn't fix a launcher written before the
+            // update. Rewrite it here too, on every list(), same self-heal spirit
+            // as the CLI launchers already use. Cheap: skip the write when the
+            // current exe path is already present in the file.
+            if let Some(exe) = self.claude_exe() {
+                let exe_str = exe.display().to_string();
+                let needs_rewrite = fs::read_to_string(&p)
+                    .map(|body| !body.contains(&exe_str))
+                    .unwrap_or(true);
+                if needs_rewrite {
+                    let _ = self.write_launcher(&slug, &data_dir, &exe);
+                }
+            }
             let dd_lower = data_dir.display().to_string().to_lowercase();
             let running = running_cmds.iter().any(|cmd| cmd.to_lowercase().contains(&dd_lower));
             let tint = fs::read_to_string(self.tint_file(&slug))
@@ -531,15 +548,23 @@ impl Platform for Win {
         if !cmd.exists() {
             return Err(format!("No such profile: {name}"));
         }
-        // Prefer the .lnk (carries the AUMID + icon); fall back to the raw .cmd.
-        let lnk = self.lnk_path(name);
-        let target = if lnk.exists() { lnk } else { cmd };
         // spawn_detached_in, not run: Claude Desktop is a long-lived process that
         // would otherwise hang `run`'s Command::output() indefinitely — see that
         // helper's doc comment (confirmed live: this exact call hung 60+s before
         // the fix, launching a real Claude Desktop instance).
+        //
+        // Target the `.cmd` directly (NOT the `.lnk`) with `start /B`: the `.lnk`'s
+        // WindowStyle is "minimized" (7), which still allocates a real, visible-if-
+        // briefly console for the `.cmd` batch script that runs inside it — and
+        // whatever Claude Desktop happens to write to its (inherited) stdout, e.g.
+        // a stray Node warning from Electron's own internals, lands in that
+        // console. `/B` runs the command with no new console at all, inheriting the
+        // caller's — which itself has none (CREATE_NO_WINDOW below) — so nothing
+        // is ever shown regardless of what Claude Desktop prints. The `.lnk` still
+        // exists for the Start Menu (AUMID/icon/taskbar grouping); this only
+        // changes how Personae's own "Launch" button starts it.
         let home = std::env::var("USERPROFILE").map(PathBuf::from).unwrap_or_else(|_| PathBuf::from("C:\\"));
-        let result = spawn_detached_in("cmd", &["/C", "start", "", &target.display().to_string()], &home);
+        let result = spawn_detached_in("cmd", &["/C", "start", "/B", "", &cmd.display().to_string()], &home);
         if result.is_ok() {
             invalidate_running_cache(); // new process — force a fresh running check
         }
