@@ -18,7 +18,8 @@
     "personae": "bin/personae.js"
   },
   "scripts": {
-    "dev": "vite",
+    "dev": "tauri dev",
+    "dev:web": "vite",
     "build": "vue-tsc --noEmit && vite build",
     "preview": "vite preview",
     "test": "vitest run",
