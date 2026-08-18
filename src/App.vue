@@ -45,8 +45,16 @@ function setView(v: "desktop" | "cli") {
 
 onMounted(() => {
   desktop.reload();
+  // Throttled (leading-edge): fires on focus (e.g. returning from the Terminal
+  // after `claude auth login`, to re-detect it), but coalesces rapid focus/blur
+  // cycles so the CLI probes don't re-run more than once per ~800ms.
+  let lastCliFocusReload = 0;
   window.addEventListener("focus", () => {
-    if (ui.view === "cli") cli.reloadCli();
+    if (ui.view !== "cli") return;
+    const t = Date.now();
+    if (t - lastCliFocusReload < 800) return;
+    lastCliFocusReload = t;
+    cli.reloadCli();
   });
 });
 </script>
