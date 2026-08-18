@@ -492,6 +492,7 @@ kbd {
 }
 .cli-metrics strong { color: var(--text); font-size: 15px; font-weight: 600; }
 .cli-metrics strong.text-warn { color: var(--warn); }
+.metric-with-dot { display: inline-flex; align-items: center; gap: 7px; }
 
 .cli-setup-card {
   display: flex; gap: 13px; align-items: flex-start; margin-top: 18px; padding: 16px;

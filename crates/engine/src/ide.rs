@@ -90,11 +90,12 @@ mod imp {
     use std::path::PathBuf;
 
     // Reuse the CLI account's config-dir root (per-slug dirs live here).
+    // MUST byte-match cli::imp::config_dir.
     pub fn cli_config_dir(slug: &str) -> PathBuf {
-        home().join("Library/Application Support/ClaudeProfilesCLI").join(slug)
+        home().join("Library/Application Support/Personae/CLI").join(slug)
     }
     pub fn workspaces_file() -> PathBuf {
-        home().join("Library/Application Support/ClaudeProfilesCLI/workspaces.json")
+        home().join("Library/Application Support/Personae/CLI/workspaces.json")
     }
 
     /// Candidate VS Code-family IDEs: (id, display, [bundle-relative CLI paths to probe]).
@@ -133,6 +134,9 @@ mod imp {
     }
 
     pub fn load_workspaces() -> Vec<Workspace> {
+        // Defensive: `cli::list()` also runs this, but `list_workspaces` reads
+        // the same migrated root and could be invoked first on startup.
+        crate::cli::migrate_legacy_dirs();
         match fs::read_to_string(workspaces_file()) {
             Ok(s) => serde_json::from_str(&s).unwrap_or_default(),
             Err(_) => vec![],
@@ -161,13 +165,13 @@ mod imp_win {
     fn localappdata() -> PathBuf { PathBuf::from(std::env::var("LOCALAPPDATA").unwrap_or_default()) }
     fn programfiles() -> PathBuf { PathBuf::from(std::env::var("ProgramFiles").unwrap_or_default()) }
 
-    // MUST byte-match cli::imp_win::config_dir: %APPDATA%\ClaudeProfilesCLI\<slug>
+    // MUST byte-match cli::imp_win::config_dir: %APPDATA%\Personae\CLI\<slug>
     pub fn cli_config_dir(slug: &str) -> PathBuf {
-        appdata().join("ClaudeProfilesCLI").join(slug)
+        appdata().join("Personae").join("CLI").join(slug)
     }
-    // %APPDATA%\ClaudeProfilesCLI\workspaces.json
+    // %APPDATA%\Personae\CLI\workspaces.json
     pub fn workspaces_file() -> PathBuf {
-        appdata().join("ClaudeProfilesCLI").join("workspaces.json")
+        appdata().join("Personae").join("CLI").join("workspaces.json")
     }
 
     /// Like `crate::platform::run`, but with CREATE_NO_WINDOW so the IDE-discovery
@@ -244,6 +248,9 @@ mod imp_win {
     }
 
     pub fn load_workspaces() -> Vec<Workspace> {
+        // Defensive: `cli::list()` also runs this, but `list_workspaces` reads
+        // the same migrated root and could be invoked first on startup.
+        crate::cli::migrate_legacy_dirs();
         match fs::read_to_string(workspaces_file()) {
             Ok(s) => serde_json::from_str(&s).unwrap_or_default(),
             Err(_) => vec![],

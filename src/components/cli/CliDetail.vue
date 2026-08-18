@@ -81,12 +81,12 @@ function openIde() {
       </div>
     </section>
     <section v-if="cliCurrent.logged_in" class="cli-metrics" aria-label="Account overview">
-      <div><span>Status</span><strong :class="{ 'text-warn': statusPill.warn }">{{ statusPill.label }}</strong></div>
+      <div><span>Status</span><strong class="metric-with-dot"><span class="account-status-dot" :class="cliCurrent.logged_in ? 'is-ok' : 'is-idle'" aria-hidden="true"></span>{{ statusPill.label }}</strong></div>
       <div><span>Storage</span><strong>{{ prettySize(cliCurrent.data_size) }}</strong></div>
       <div><span>Last active</span><strong>{{ relTime(cliCurrent.last_active) }}</strong></div>
       <div><span>Created</span><strong>{{ createdLabel(cliCurrent.created) }}</strong></div>
       <div><span>Session expires</span><strong :class="{ 'text-warn': expiry?.warn }">{{ expiry ? expiryColumnValue : "—" }}</strong></div>
-      <div><span>Quota</span><strong>{{ planLabel(cliCurrent.subscription_type, cliCurrent.rate_limit_tier) }}</strong></div>
+      <div><span>Usage</span><strong>{{ planLabel(cliCurrent.subscription_type, cliCurrent.rate_limit_tier) }}</strong></div>
     </section>
     <section v-else class="cli-setup-card">
       <div class="setup-icon" aria-hidden="true">↳</div>
@@ -118,10 +118,10 @@ function openIde() {
           <div><span class="advanced-label">Config directory</span><code>{{ cliCurrent.config_dir }}</code></div>
           <button class="btn compact" @click="reveal">Show in Finder</button>
         </div>
-        <div class="desktop-accent-row">
+        <div class="advanced-path-row">
           <div>
-            <strong>Provider</strong>
-            <span>{{ cliCurrent.auth_mode === "api_key" ? `API key${cliCurrent.provider_model ? " · " + cliCurrent.provider_model : ""}` : "claude.ai sign-in" }}</span>
+            <span class="advanced-label">Provider</span>
+            <code>{{ cliCurrent.auth_mode === "api_key" ? `API key${cliCurrent.provider_model ? " · " + cliCurrent.provider_model : ""}` : "claude.ai sign-in" }}</code>
           </div>
           <button class="btn compact" @click="ui.openModal('provider')">Change…</button>
         </div>

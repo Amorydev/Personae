@@ -13,3 +13,4 @@ pub mod cli;
 pub mod ide;
 pub mod terminal;
 pub mod browser;
+pub mod desktop_prefs;

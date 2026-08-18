@@ -11,6 +11,7 @@ import DesktopDetail from "./components/desktop/DesktopDetail.vue";
 import CreateProfileModal from "./components/desktop/CreateProfileModal.vue";
 import EditAccentModal from "./components/desktop/EditAccentModal.vue";
 import DeleteProfileModal from "./components/desktop/DeleteProfileModal.vue";
+import DesktopSettingsModal from "./components/desktop/DesktopSettingsModal.vue";
 import CliSidebar from "./components/cli/CliSidebar.vue";
 import CliDetail from "./components/cli/CliDetail.vue";
 import CliCreateModal from "./components/cli/CliCreateModal.vue";
@@ -62,7 +63,7 @@ onMounted(() => {
         </div>
         <div class="spacer" data-tauri-drag-region></div>
       </div>
-      <div v-if="!desktop.claudeFound" class="warn">⚠️ Claude Desktop not found. Install it, or set CLAUDE_APP.</div>
+      <div v-if="!desktop.claudeFound" class="warn">⚠️ Claude Desktop not found. Install it, or set its location in ⚙ Settings.</div>
       <div class="detail-body desktop-detail-body">
         <DesktopDetail />
       </div>
@@ -89,6 +90,7 @@ onMounted(() => {
   <CreateProfileModal />
   <EditAccentModal />
   <DeleteProfileModal />
+  <DesktopSettingsModal />
   <CliCreateModal />
   <CliDeleteModal />
   <IdeModal />

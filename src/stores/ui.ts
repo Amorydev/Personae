@@ -1,7 +1,7 @@
 import { defineStore } from "pinia";
 import { reactive, ref } from "vue";
 
-export type ModalName = "create" | "edit" | "del" | "cliCreate" | "cliDel" | "ide" | "provider" | "terminal" | "settings" | "launchLocation";
+export type ModalName = "create" | "edit" | "del" | "cliCreate" | "cliDel" | "ide" | "provider" | "terminal" | "settings" | "desktopSettings" | "launchLocation";
 export type ToastTone = "info" | "error";
 
 export const useUiStore = defineStore("ui", () => {
@@ -17,6 +17,7 @@ export const useUiStore = defineStore("ui", () => {
     provider: false,
     terminal: false,
     settings: false,
+    desktopSettings: false,
     launchLocation: false,
   });
   let toastTimer: ReturnType<typeof setTimeout> | undefined;

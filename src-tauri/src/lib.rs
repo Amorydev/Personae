@@ -1,7 +1,7 @@
 // All business logic lives in the personae-engine crate (see crates/engine —
 // deliberately has no tauri dependency, so it builds/tests independently of
 // the GUI stack). This crate is just the tauri-command translation layer.
-use personae_engine::{browser, cli, ide, platform, terminal};
+use personae_engine::{browser, cli, desktop_prefs, ide, platform, terminal};
 use platform::{active, Platform, Profile};
 
 /// Tauri v2 runs non-async `#[tauri::command]` handlers on the main UI thread. Every command
@@ -43,6 +43,17 @@ async fn repair_profiles() -> Result<usize, String> { blocking(|| active().repai
 
 #[tauri::command]
 async fn set_profile_color(name: String, color: String) -> Result<(), String> { blocking(move || active().set_color(&name, &color)).await }
+
+#[tauri::command]
+async fn get_desktop_exe_override() -> Option<String> { blocking(desktop_prefs::get_custom_exe).await }
+
+#[tauri::command]
+async fn set_desktop_exe_override(path: Option<String>) -> Result<(), String> {
+    blocking(move || desktop_prefs::set_custom_exe(path)).await
+}
+
+#[tauri::command]
+async fn pick_desktop_exe() -> Result<Option<String>, String> { blocking(desktop_prefs::pick_desktop_exe).await }
 
 #[tauri::command]
 async fn reveal_path(path: String) {
@@ -165,7 +176,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             claude_found, list_profiles, create_profile,
             launch_profile, quit_profile, delete_profile, repair_profiles,
-            set_profile_color, reveal_path, open_url,
+            set_profile_color, get_desktop_exe_override, set_desktop_exe_override, pick_desktop_exe,
+            reveal_path, open_url,
             cli_available, list_cli_profiles, create_cli_profile, login_cli_profile,
             launch_cli_profile, get_launch_history, delete_cli_profile,
             get_cli_provider_config, set_cli_provider_config,

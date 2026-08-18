@@ -46,6 +46,8 @@ const MOCK_TERMINALS: TerminalApp[] = [
   { id: "windows-terminal", name: "Windows Terminal" },
 ];
 
+let MOCK_DESKTOP_EXE_OVERRIDE: string | null = null;
+
 let MOCK_BROWSER_PREFS: BrowserPrefs = { browser_id: null, custom_path: null, reuse_profile: true };
 const MOCK_BROWSERS: BrowserApp[] = [
   { id: "chrome", name: "Google Chrome" },
@@ -69,6 +71,9 @@ export async function invoke<T = unknown>(cmd: string, args?: Record<string, unk
       return undefined as T;
     }
     case "set_profile_color": { const p = MOCK.find(m => m.name === args!.name); if (p) p.tint = `#${args!.color}`; return undefined as T; }
+    case "get_desktop_exe_override": return MOCK_DESKTOP_EXE_OVERRIDE as T;
+    case "set_desktop_exe_override": MOCK_DESKTOP_EXE_OVERRIDE = (args!.path as string | null) ?? null; return undefined as T;
+    case "pick_desktop_exe": return "C:\\Program Files\\AnthropicClaude\\Claude.exe" as T;
     case "launch_profile": { const p = MOCK.find(m => m.name === args!.name); if (p) p.running = true; return undefined as T; }
     case "quit_profile": { const p = MOCK.find(m => m.name === args!.name); if (p) p.running = false; return undefined as T; }
     case "delete_profile": { const i = MOCK.findIndex(m => m.name === args!.name); if (i >= 0) MOCK.splice(i, 1); return undefined as T; }

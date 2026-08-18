@@ -51,6 +51,7 @@ const { profiles, filtered, selected, query, initialized } = storeToRefs(desktop
     </ul>
     <div class="side-foot">
       <ThemeSwitch class="sidebar-theme-switch" />
+      <button class="settings-btn" @click="ui.openModal('desktopSettings')">⚙ Settings</button>
       <button class="newbtn" @click="ui.openModal('create')"><span class="plus">+</span> New profile</button>
     </div>
   </aside>

@@ -216,8 +216,17 @@ impl Win {
         None
     }
 
-    /// Locate Claude.exe. Cached in memory using OnceLock so subsequent calls take 0ms.
+    /// Locate Claude.exe. A user-set override (see `desktop_prefs`) always wins
+    /// and is re-checked on every call (cheap: one JSON read + one stat) so a
+    /// settings change takes effect immediately, without restarting Personae.
+    /// The auto-detected fallback is cached in memory via OnceLock.
     fn claude_exe(&self) -> Option<PathBuf> {
+        if let Some(p) = crate::desktop_prefs::get_custom_exe() {
+            let pb = PathBuf::from(p);
+            if pb.is_file() {
+                return Some(pb);
+            }
+        }
         CLAUDE_EXE_CACHE
             .get_or_init(|| self.resolve_claude_exe())
             .clone()
@@ -237,15 +246,22 @@ impl Win {
         if let Some(exe) = Self::claude_from_running_process() {
             return Some(exe);
         }
-        if let Some(exe) = Self::claude_from_appx() {
-            return Some(exe);
-        }
         for root in self.candidate_roots() {
             if let Some(exe) = Self::exe_in_root(&root) {
                 return Some(exe);
             }
         }
-        Self::claude_from_registry()
+        if let Some(exe) = Self::claude_from_registry() {
+            return Some(exe);
+        }
+        // Last resort: the AppX/MSIX InstallLocation. Field report: this can
+        // resolve to a `C:\Program Files\WindowsApps\...` path that passes
+        // `is_file()` yet fails to launch ("the system cannot find the file")
+        // — MSIX packages generally aren't directly `CreateProcess`-able
+        // outside their own package context, unlike the exec-alias checked
+        // above. Kept only as a final guess, ranked behind every more-reliable
+        // signal; a user hitting this should set the override instead.
+        Self::claude_from_appx()
     }
 
     /// Write the two PS helpers next to the profiles; return their paths.
