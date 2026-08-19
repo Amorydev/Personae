@@ -306,8 +306,7 @@ pub fn pick_folder() -> Result<Option<String>, String> {
 /// a Claude terminal on this account), then launches the IDE at the folder.
 #[cfg(target_os = "macos")]
 pub fn open_in_ide(account: &str, ide_id: &str, project_path: &str) -> Result<(), String> {
-    use crate::platform::slugify;
-    let slug = slugify(account);
+    let slug = crate::cli::resolve_slug(account);
     if slug.is_empty() { return Err("Invalid account name.".into()); }
     let proj = std::path::PathBuf::from(project_path);
     if !proj.is_dir() { return Err(format!("Not a folder: {project_path}")); }
@@ -421,8 +420,7 @@ pub fn pick_folder() -> Result<Option<String>, String> {
 /// folder.
 #[cfg(windows)]
 pub fn open_in_ide(account: &str, ide_id: &str, project_path: &str) -> Result<(), String> {
-    use crate::platform::slugify;
-    let slug = slugify(account);
+    let slug = crate::cli::resolve_slug(account);
     if slug.is_empty() { return Err("Invalid account name.".into()); }
     let proj = std::path::PathBuf::from(project_path);
     if !proj.is_dir() { return Err(format!("Not a folder: {project_path}")); }

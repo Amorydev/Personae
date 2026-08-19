@@ -154,15 +154,34 @@ fn resolve_config_dir(slug: &str) -> PathBuf { imp_win::config_dir(slug) }
 #[cfg(not(any(target_os = "macos", windows)))]
 fn resolve_config_dir(slug: &str) -> PathBuf { config_root().join(slug) }
 
+/// Resolves a display *name* to its real slug. NOT just `slugify(name)`: a
+/// renamed account's slug can diverge from its current display name — on
+/// Windows it always does once renamed (`rename` deliberately keeps the slug
+/// fixed to the account's original creation name, so config_dir/credentials
+/// never have to move); on macOS `rename` keeps them in sync by design (moves
+/// config_dir + the Keychain entry when the slug would change), so the naive
+/// form is always correct there. Every lookup-by-name function should go
+/// through this rather than calling `slugify(name)` directly — that bug
+/// meant `delete`/`login`/`launch`/etc. on Windows could never find a
+/// renamed account again, confirmed live: deleting a renamed throwaway
+/// account failed with "No such CLI account" even though it still existed on
+/// disk under its original slug.
+#[cfg(target_os = "macos")]
+pub(crate) fn resolve_slug(name: &str) -> String { crate::platform::slugify(name) }
+#[cfg(windows)]
+pub(crate) fn resolve_slug(name: &str) -> String { imp_win::resolve_slug(name) }
+#[cfg(not(any(target_os = "macos", windows)))]
+pub(crate) fn resolve_slug(name: &str) -> String { crate::platform::slugify(name) }
+
 pub fn get_provider_config(name: &str) -> Result<ProviderConfig, String> {
-    let slug = crate::platform::slugify(name);
+    let slug = resolve_slug(name);
     let dir = resolve_config_dir(&slug);
     if !dir.exists() { return Err(format!("No such CLI account: {name}")); }
     Ok(load_provider_config(&dir))
 }
 
 pub fn set_provider_config(name: &str, cfg: ProviderConfig) -> Result<(), String> {
-    let slug = crate::platform::slugify(name);
+    let slug = resolve_slug(name);
     let dir = resolve_config_dir(&slug);
     if !dir.exists() { return Err(format!("No such CLI account: {name}")); }
     save_provider_config(&dir, &cfg)
@@ -294,7 +313,7 @@ fn parse_utilization_percentages(util: Option<&serde_json::Value>) -> (Option<u3
 /// plain "no stored credentials" error rather than reaching into the
 /// Keychain for a token just to make this one call.
 pub fn fetch_live_usage(name: &str) -> Result<(Option<u32>, Option<u32>), String> {
-    let slug = crate::platform::slugify(name);
+    let slug = resolve_slug(name);
     let dir = resolve_config_dir(&slug);
     let creds = std::fs::read_to_string(dir.join(".credentials.json"))
         .map_err(|_| "No stored credentials for this account.".to_string())?;
@@ -605,6 +624,31 @@ mod imp_win {
     pub fn login_path(slug: &str) -> PathBuf { launcher_root().join("_login").join(format!("{slug}.cmd")) }
     pub fn config_dir(slug: &str) -> PathBuf { config_root().join(slug) }
 
+    /// See `super::resolve_slug`'s doc comment for why this exists at all.
+    /// Fast path (an unrenamed account, or before any rename has ever
+    /// happened) is exactly `slugify(name)`; only falls back to scanning
+    /// `.name` sidecars — the only place a renamed account's real slug is
+    /// recorded — when that doesn't resolve to a real launcher.
+    pub fn resolve_slug(name: &str) -> String {
+        let fast = crate::platform::slugify(name);
+        if launcher_path(&fast).exists() { return fast; }
+        if let Ok(rd) = fs::read_dir(launcher_root()) {
+            for e in rd.flatten() {
+                let p = e.path();
+                if p.extension().map_or(false, |x| x == "name") {
+                    if let Ok(stored) = fs::read_to_string(&p) {
+                        if stored.trim() == name {
+                            if let Some(stem) = p.file_stem() {
+                                return stem.to_string_lossy().to_string();
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        fast
+    }
+
     /// One-time move from the legacy `ClaudeProfilesCLI` folder name to
     /// `Personae` — see the macOS `imp::migrate_legacy_dirs` doc comment for
     /// the full rationale (same idempotent, self-heal-on-list pattern). No
@@ -768,7 +812,7 @@ fn push_launch_location(mut list: Vec<String>, path: &str) -> Vec<String> {
 /// most-recent first, capped at 5. Empty (not an error) for an unknown/never-
 /// launched-with-a-folder account.
 pub fn get_launch_history(name: &str) -> Vec<String> {
-    let slug = crate::platform::slugify(name);
+    let slug = resolve_slug(name);
     load_launch_history_at(&launch_history_file()).remove(&slug).unwrap_or_default()
 }
 
@@ -806,7 +850,7 @@ pub fn ensure_onboarded(name: &str) {
 }
 #[cfg(windows)]
 pub fn ensure_onboarded(name: &str) {
-    let slug = crate::platform::slugify(name);
+    let slug = imp_win::resolve_slug(name);
     if imp_win::login_present(&slug) { imp_win::mark_onboarded(&slug); }
 }
 #[cfg(not(any(target_os = "macos", windows)))]
@@ -1029,8 +1073,7 @@ pub fn create(name: &str) -> Result<(), String> {
 /// just the sidecar file.
 #[cfg(windows)]
 pub fn rename(old_name: &str, new_name: &str) -> Result<(), String> {
-    use crate::platform::slugify;
-    let slug = slugify(old_name);
+    let slug = imp_win::resolve_slug(old_name);
     if !imp_win::launcher_path(&slug).exists() { return Err(format!("No such CLI account: {old_name}")); }
     let new_name = new_name.trim();
     if new_name.is_empty() { return Err("Name must contain letters or numbers.".into()); }
@@ -1051,8 +1094,7 @@ fn user_home_dir() -> PathBuf {
 /// <config_dir>\.credentials.json (Keychain is absent), isolated per account.
 #[cfg(windows)]
 pub fn login(name: &str) -> Result<(), String> {
-    use crate::platform::slugify;
-    let slug = slugify(name);
+    let slug = imp_win::resolve_slug(name);
     if !imp_win::launcher_path(&slug).exists() { return Err(format!("No such CLI account: {name}")); }
     imp_win::claude_bin().ok_or("Claude Code CLI not found (install `claude`).")?;
     let script = imp_win::write_login_script(name, &slug)?;
@@ -1067,8 +1109,7 @@ pub fn login(name: &str) -> Result<(), String> {
 
 #[cfg(windows)]
 pub fn launch(name: &str, project_path: Option<&str>) -> Result<(), String> {
-    use crate::platform::slugify;
-    let slug = slugify(name);
+    let slug = imp_win::resolve_slug(name);
     let lp = imp_win::launcher_path(&slug);
     if !lp.exists() { return Err(format!("No such CLI account: {name}")); }
     ensure_onboarded(name); // skip the first-run menu if already logged in
@@ -1179,8 +1220,7 @@ pub fn list() -> Vec<CliProfile> {
 
 #[cfg(windows)]
 pub fn delete(name: &str, purge: bool) -> Result<(), String> {
-    use crate::platform::slugify;
-    let slug = slugify(name);
+    let slug = imp_win::resolve_slug(name);
     let lp = imp_win::launcher_path(&slug);
     if !lp.exists() { return Err(format!("No such CLI account: {name}")); }
     std::fs::remove_file(&lp).map_err(|e| e.to_string())?;
