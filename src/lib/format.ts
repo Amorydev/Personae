@@ -84,3 +84,14 @@ export function cliColor(p: CliProfile | DesktopProfile | null | undefined): str
   }
   return `#${PALETTE[(hash >>> 0) % PALETTE.length]}`;
 }
+
+export function accentInk(hex: string | null | undefined): string {
+  const h = (hex || "").replace(/^#/, "");
+  if (!/^[0-9a-f]{6}$/i.test(h)) return "#000";
+  const channel = (i: number) => {
+    const c = parseInt(h.slice(i, i + 2), 16) / 255;
+    return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+  };
+  const l = 0.2126 * channel(0) + 0.7152 * channel(2) + 0.0722 * channel(4);
+  return (l + 0.05) / 0.05 >= 1.05 / (l + 0.05) ? "#000" : "#fff";
+}
