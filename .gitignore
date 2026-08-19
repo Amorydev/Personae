@@ -28,3 +28,6 @@ dist-ssr
 
 # Internal-only content (marketing playbooks, design/planning notes) — kept local, not published
 internal/
+
+# Deploy credentials for the landing page — host/user/path, kept local
+scripts/deploy-landing.env

@@ -22,6 +22,7 @@
     "dev:web": "vite",
     "build": "vue-tsc --noEmit && vite build",
     "landing:build": "node landing/build.mjs",
+    "landing:deploy": "bash scripts/deploy-landing.sh",
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
