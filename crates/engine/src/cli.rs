@@ -260,20 +260,72 @@ pub fn extract_usage_utilization(json: &str) -> (Option<u32>, Option<u32>) {
         Ok(v) => v,
         Err(_) => return (None, None),
     };
-    let util = v.get("cachedUsageUtilization").and_then(|c| c.get("utilization"));
+    parse_utilization_percentages(v.get("cachedUsageUtilization").and_then(|c| c.get("utilization")))
+}
+
+/// Shared by `extract_usage_utilization` (the CLI's cached copy, nested under
+/// `cachedUsageUtilization.utilization` in `.claude.json`) and
+/// `fetch_live_usage` (the raw response body IS this same "utilization"
+/// shape). `as_f64` + round, not `as_u64`: the CLI's own cache serializes a
+/// whole-number percent bare (`29`), but the live API returns it as an
+/// explicit float (`29.0`) — `as_u64()` would silently miss the latter.
+fn parse_utilization_percentages(util: Option<&serde_json::Value>) -> (Option<u32>, Option<u32>) {
     let session = util
         .and_then(|u| u.get("five_hour"))
         .and_then(|f| f.get("utilization"))
-        .and_then(|x| x.as_u64())
-        .map(|x| x as u32);
+        .and_then(|x| x.as_f64())
+        .map(|x| x.round() as u32);
     let weekly = util
         .and_then(|u| u.get("limits"))
         .and_then(|l| l.as_array())
         .and_then(|arr| arr.iter().find(|e| e.get("kind").and_then(|k| k.as_str()) == Some("weekly_all")))
         .and_then(|e| e.get("percent"))
-        .and_then(|x| x.as_u64())
-        .map(|x| x as u32);
+        .and_then(|x| x.as_f64())
+        .map(|x| x.round() as u32);
     (session, weekly)
+}
+
+/// Fetch **live** usage straight from Anthropic's own endpoint — the exact
+/// call `claude` itself makes (confirmed by tracing the bundled CLI's own
+/// source this session, then verifying live with a real GET): a lightweight,
+/// read-only status fetch (5s timeout in the CLI's own code), not a billed
+/// completion. Used only for the explicit manual refresh button — the
+/// automatic refreshes (account select, window focus, switching into the CLI
+/// view) stay on the cheap local re-read (`get_usage`) so normal browsing
+/// never silently calls out to this endpoint on every click.
+///
+/// The access token is written to a short-lived curl `-K` config file rather
+/// than passed as a `-H` argument: a process's command-line arguments are
+/// readable by other processes on the machine (e.g. via WMI), which would
+/// expose a live bearer token more broadly than this platform's existing,
+/// already-accepted exposure (the plaintext `.credentials.json` itself — see
+/// `imp_win`'s module doc for why: no Keychain on Windows).
+///
+/// Windows-functional only for now: macOS keeps the OAuth credential in the
+/// Keychain, not a plaintext file, so this reads nothing there and returns a
+/// plain "no stored credentials" error rather than reaching into the
+/// Keychain for a token just to make this one call.
+pub fn fetch_live_usage(name: &str) -> Result<(Option<u32>, Option<u32>), String> {
+    let slug = crate::platform::slugify(name);
+    let dir = resolve_config_dir(&slug);
+    let creds = std::fs::read_to_string(dir.join(".credentials.json"))
+        .map_err(|_| "No stored credentials for this account.".to_string())?;
+    let v: serde_json::Value = serde_json::from_str(&creds).map_err(|e| e.to_string())?;
+    let token = v.get("claudeAiOauth").and_then(|o| o.get("accessToken")).and_then(|t| t.as_str())
+        .ok_or("This account has no OAuth access token (API-key accounts have no Claude usage cap).")?;
+
+    let cfg_path = std::env::temp_dir().join(format!("personae-usage-{}-{}.curlcfg", std::process::id(), slug));
+    let cfg_body = format!(
+        "silent\nshow-error\nheader = \"Content-Type: application/json\"\nheader = \"Authorization: Bearer {token}\"\nurl = \"https://api.anthropic.com/api/oauth/usage\"\n"
+    );
+    std::fs::write(&cfg_path, cfg_body).map_err(|e| e.to_string())?;
+    let (ok, out) = crate::platform::run("curl", &["-K", &cfg_path.display().to_string(), "--max-time", "8"]);
+    let _ = std::fs::remove_file(&cfg_path);
+
+    if !ok { return Err(format!("Usage fetch failed: {}", out.trim())); }
+    let body: serde_json::Value = serde_json::from_str(&out)
+        .map_err(|_| format!("Unexpected response: {}", out.trim().chars().take(200).collect::<String>()))?;
+    Ok(parse_utilization_percentages(Some(&body)))
 }
 
 // ---- cross-platform Windows-launcher builders (pure; unit-tested on macOS) --
@@ -1121,6 +1173,21 @@ mod tests {
         assert_eq!(extract_usage_utilization(j), (Some(29), Some(7)));
         assert_eq!(extract_usage_utilization(r#"{"no":"usage"}"#), (None, None));
         assert_eq!(extract_usage_utilization("not json"), (None, None));
+    }
+
+    #[test]
+    fn parse_utilization_percentages_rounds_live_api_floats() {
+        // Shape verified live: a real GET https://api.anthropic.com/api/oauth/usage
+        // response body IS this "utilization" object directly (no wrapping
+        // cachedUsageUtilization key), and its numbers are explicit floats
+        // (e.g. "2.0"), unlike the CLI's own cache which serializes them bare.
+        let body: serde_json::Value = serde_json::from_str(
+            r#"{"five_hour":{"utilization":2.0},"limits":[
+                {"kind":"weekly_all","group":"weekly","percent":9.0}
+            ]}"#
+        ).unwrap();
+        assert_eq!(parse_utilization_percentages(Some(&body)), (Some(2), Some(9)));
+        assert_eq!(parse_utilization_percentages(None), (None, None));
     }
 
     #[test]

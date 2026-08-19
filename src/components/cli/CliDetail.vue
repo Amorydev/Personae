@@ -92,9 +92,9 @@ function openIde() {
           <button
             class="mini usage-refresh-btn"
             :class="{ spinning: cli.usageRefreshingSlug === cliCurrent.slug }"
-            title="Refresh usage"
-            aria-label="Refresh usage"
-            @click="cli.refreshUsage(cliCurrent)"
+            title="Refresh usage from Anthropic"
+            aria-label="Refresh usage from Anthropic"
+            @click="cli.refreshUsageLive(cliCurrent)"
           >↻</button>
         </span>
         <strong>{{ usageLabel(cliCurrent.session_usage_pct, cliCurrent.weekly_usage_pct, cliCurrent.subscription_type, cliCurrent.rate_limit_tier) }}</strong>

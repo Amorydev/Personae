@@ -50,25 +50,48 @@ export const useCliStore = defineStore("cli", () => {
     refreshUsage(p);
   }
 
-  // Fire-and-forget by default: re-reads just this account's cached /usage
-  // numbers from disk and patches them in reactively. Not awaited by
-  // selectCliProfile — selecting an account should never block on it, and a
-  // failure here shouldn't surface as an error toast for what's just a
-  // background refresh. The manual refresh button awaits it instead, to drive
-  // its own spinner.
+  // Fire-and-forget: re-reads just this account's *cached* /usage numbers
+  // from disk (whatever the claude CLI itself last fetched) and patches them
+  // in reactively. Never awaited by selectCliProfile — selecting an account
+  // should never block on it — and a failure here shouldn't surface as an
+  // error toast for what's just a passive background refresh. This is cheap
+  // (one file read), so it's safe to fire on every select/focus/view-switch.
   async function refreshUsage(p: CliProfile) {
     usageRefreshingSlug.value = p.slug;
     try {
       const [sessionPct, weeklyPct] = await invoke<[number | null, number | null]>("get_cli_usage", { name: p.name });
-      const target = cliProfiles.value.find((x) => x.slug === p.slug);
-      if (target) {
-        target.session_usage_pct = sessionPct;
-        target.weekly_usage_pct = weeklyPct;
-      }
+      patchUsage(p.slug, sessionPct, weeklyPct);
     } catch (e) {
       console.error(e);
     } finally {
       if (usageRefreshingSlug.value === p.slug) usageRefreshingSlug.value = null;
+    }
+  }
+
+  // The manual refresh button: a REAL network call straight to Anthropic's
+  // own usage endpoint (the exact lightweight, non-billed GET `claude` itself
+  // makes — see cli::fetch_live_usage), not just a re-read of what the CLI
+  // last cached. Awaited (drives the button's spinner) and surfaces a toast
+  // on failure, since this is an explicit user action, unlike the passive
+  // refreshUsage above.
+  async function refreshUsageLive(p: CliProfile) {
+    const ui = useUiStore();
+    usageRefreshingSlug.value = p.slug;
+    try {
+      const [sessionPct, weeklyPct] = await invoke<[number | null, number | null]>("fetch_live_cli_usage", { name: p.name });
+      patchUsage(p.slug, sessionPct, weeklyPct);
+    } catch (e) {
+      ui.showToast(String(e), "error");
+    } finally {
+      if (usageRefreshingSlug.value === p.slug) usageRefreshingSlug.value = null;
+    }
+  }
+
+  function patchUsage(slug: string, sessionPct: number | null, weeklyPct: number | null) {
+    const target = cliProfiles.value.find((x) => x.slug === slug);
+    if (target) {
+      target.session_usage_pct = sessionPct;
+      target.weekly_usage_pct = weeklyPct;
     }
   }
 
@@ -197,6 +220,6 @@ export const useCliStore = defineStore("cli", () => {
     cliProfiles, cliSelected, cliQuery, cliAvailable, cliWorkspaces, pendingLaunch, initialized, usageRefreshingSlug,
     filteredCli, cliCurrent, workspacesFor,
     reloadCli, selectCliProfile, moveCliSelection, doCliLogin, doCliLaunch, doCliLaunchAt, getLaunchHistory, resumePendingLaunch, doCliCreate, doCliDelete,
-    deleteWorkspace, openWorkspace, openInIde, getProviderConfig, setProviderConfig, refreshUsage,
+    deleteWorkspace, openWorkspace, openInIde, getProviderConfig, setProviderConfig, refreshUsage, refreshUsageLive,
   };
 });
