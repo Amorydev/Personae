@@ -42,6 +42,8 @@ export function useGlobalShortcuts() {
     if (meta && e.key.toLowerCase() === "r") { e.preventDefault(); desktop.repair(); return; }
     if (e.key === "/" && !typing) { e.preventDefault(); document.getElementById("search")?.focus(); return; }
     if (typing) return;
+    const interactive = (document.activeElement as HTMLElement | null)?.matches?.("button, select, [role=button]");
+    if (interactive) return;
     if (e.key === "Enter") {
       const p = desktop.current;
       if (p) (p.running ? desktop.quit(p) : desktop.launch(p));
