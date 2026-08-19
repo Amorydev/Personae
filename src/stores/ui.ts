@@ -41,7 +41,7 @@ export const useUiStore = defineStore("ui", () => {
   }
 
   function openModal(name: ModalName) {
-    modals[name] = true;
+    for (const k of Object.keys(modals) as ModalName[]) modals[k] = k === name;
   }
 
   function closeModal(name: ModalName) {
