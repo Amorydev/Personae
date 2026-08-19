@@ -1,7 +1,7 @@
 import type { BrowserApp, BrowserPrefs, CliProfile, DesktopProfile, IdeInfo, ProviderConfig, TerminalApp, Workspace } from "./types";
 
 // ---------- Tauri bridge (with a mock fallback for browser preview) ----------
-const hasTauri = !!(window.__TAURI__ && window.__TAURI__.core);
+export const hasTauri = !!(window.__TAURI__ && window.__TAURI__.core);
 
 export const nowSecs = () => Math.floor(Date.now() / 1000);
 

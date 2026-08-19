@@ -7,7 +7,7 @@
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT" /></a>
   <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Windows-lightgrey.svg" alt="Platform: macOS | Windows" />
-  <a href="https://github.com/Amorydev/MultipleClaudeProfile/actions/workflows/release.yml"><img src="https://github.com/Amorydev/MultipleClaudeProfile/actions/workflows/release.yml/badge.svg" alt="Release build status" /></a>
+  <a href="https://github.com/Amorydev/Personae/actions/workflows/release.yml"><img src="https://github.com/Amorydev/Personae/actions/workflows/release.yml/badge.svg" alt="Release build status" /></a>
   <img src="https://img.shields.io/badge/built%20with-Tauri-24C8DB.svg?logo=tauri&logoColor=white" alt="Built with Tauri" />
 </p>
 
@@ -122,8 +122,8 @@ The frontend is a [Vue 3](https://vuejs.org/) + [Vite](https://vitejs.dev/) app 
 Clone the repository:
 
 ```bash
-git clone https://github.com/Amorydev/MultipleClaudeProfile.git
-cd MultipleClaudeProfile
+git clone https://github.com/Amorydev/Personae.git
+cd Personae
 ```
 
 Then produce distributable installers for the current platform:
@@ -227,7 +227,7 @@ git push origin v0.1.0
 
 Contributions are welcome — bug reports, feature ideas, and pull requests are all appreciated.
 
-- **Issues:** open one at [github.com/Amorydev/MultipleClaudeProfile/issues](https://github.com/Amorydev/MultipleClaudeProfile/issues).
+- **Issues:** open one at [github.com/Amorydev/Personae/issues](https://github.com/Amorydev/Personae/issues).
 - **Pull requests:** fork the repo, create a feature branch, and use the [Development](#development) setup to run the app locally. Keep changes focused and match the surrounding style — the Rust backend favours small, testable pure functions organised per module (`macos.rs`, `windows.rs`, `cli.rs`, `ide.rs`).
 - **Platform-specific code:** most logic is shared, but Desktop-profile handling is OS-specific. If you touch Windows behaviour, follow [`docs/WINDOWS-TEST-PLAN.md`](docs/WINDOWS-TEST-PLAN.md).
 

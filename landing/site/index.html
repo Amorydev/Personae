@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
 
   <title>Personae — Run multiple Claude accounts at once, Desktop &amp; CLI | macOS &amp; Windows</title>
-  <meta name="description" content="Personae runs multiple isolated Claude accounts at once — Claude Desktop profiles and Claude Code (CLI) accounts, each with its own login, history, and colour. Free, local, ~3 MB. Switch Claude accounts without logging out.">
+  <meta name="description" content="Personae runs multiple isolated Claude accounts at once — Claude Desktop profiles and Claude Code (CLI) accounts, each with its own login, history, and colour. Free, local, a few MB. Switch Claude accounts without logging out.">
   <meta name="keywords" content="multiple Claude accounts, multi Claude, Claude Desktop profiles, Claude profile switcher, run two Claude accounts, multi-account Claude, Claude multiple accounts macOS, Claude multiple accounts Windows, multiple Claude Code accounts, Claude Code multi account, Claude CLI switch account, run multiple Claude Code, CLAUDE_CONFIG_DIR">
   <meta name="author" content="Amory">
   <meta name="robots" content="index, follow">
@@ -216,7 +216,7 @@
               background: linear-gradient(180deg, rgba(255,255,255,.055), transparent); }
   .win .light { width: 11px; height: 11px; border-radius: 50%; }
   .win .r1 { background: #f0655a; } .win .r2 { background: #f4bd4e; } .win .r3 { background: #62c956; }
-  .win .body { display: grid; grid-template-columns: 250px minmax(0,1fr); min-height: 392px; }
+  .win .body { display: grid; grid-template-columns: 250px minmax(0,1fr); min-height: 392px; height: 100%; }
   .win .side { border-right: 1px solid var(--line-soft); padding: 13px 11px; display: flex; flex-direction: column; gap: 3px; background: #0d0c10; }
   .win .search { display: flex; align-items: center; gap: 7px; background: #100f13; border: 1px solid var(--line-soft); border-radius: 8px; padding: 8px 10px; color: var(--faint); }
   .win .search .mag { width: 11px; height: 11px; border: 1.4px solid var(--faint); border-radius: 50%; position: relative; flex: none; }
@@ -232,7 +232,12 @@
   .win .prow .sdot { margin-left: auto; width: 8px; height: 8px; border-radius: 50%; flex: none; background: #3a3640; }
   .win .prow .sdot.ok { background: var(--ok); box-shadow: 0 0 7px var(--ok); }
   .win .prow .sdot.warn { background: var(--amber); box-shadow: 0 0 7px var(--amber); }
-  .win .newp { margin-top: auto; display: flex; align-items: center; justify-content: center; gap: 6px; font-size: 12px; color: var(--dim); border: 1px solid var(--line-soft); border-radius: 9px; padding: 9px; background: #100f13; }
+  .win .sfoot { margin: auto -11px 0; border-top: 1px solid var(--line-soft); padding: 9px 11px 0; display: flex; flex-direction: column; gap: 6px; }
+  .win .tsw { display: flex; border: 1px solid var(--line-soft); border-radius: 8px; overflow: hidden; background: #100f13; }
+  .win .tseg { flex: 1; text-align: center; font-size: 10.5px; font-weight: 600; color: var(--dim); padding: 5px 0; }
+  .win .tseg.on { background: var(--terra); color: #fff; }
+  .win .sbtn { display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--dim); border-radius: 8px; padding: 7px 9px; }
+  .win .newp { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--dim); border: 1px solid var(--line-soft); border-radius: 9px; padding: 9px; background: #100f13; }
 
   /* terminal ">_" account mark */
   .win .cmark { display: grid; place-items: center; border-radius: 28%; font-family: var(--mono); font-weight: 700; line-height: 1;
@@ -241,36 +246,45 @@
   .win .cmark.sm { width: 26px; height: 26px; font-size: 11px; }
   .win .cmark.lg { width: 48px; height: 48px; font-size: 19px; border-radius: 24%; }
 
-  .win .main { padding: 15px 20px 20px; position: relative; display: flex; flex-direction: column; min-width: 0; }
+  .win .main { padding: 11px 17px 17px; position: relative; display: flex; flex-direction: column; min-width: 0; }
   .win .main::before { content:""; position:absolute; inset:0 0 auto 0; height:120px;
                        background: radial-gradient(80% 120% at 30% -30%, color-mix(in srgb, var(--wc) 16%, transparent), transparent 60%); pointer-events:none; }
-  .win .segwrap { align-self: center; display: inline-flex; gap: 2px; padding: 3px; background: #100f13; border: 1px solid var(--line-soft); border-radius: 10px; }
-  .win .seg { font-size: 11.5px; font-weight: 600; color: var(--dim); padding: 5px 18px; border-radius: 7px; cursor: pointer; transition: color .2s ease, background .2s ease; }
+  .win .shead { height: 38px; flex: none; display: flex; align-items: center; justify-content: center; }
+  .win .segwrap { display: inline-flex; overflow: hidden; background: #100f13; border: 1px solid var(--line-soft); border-radius: 9px; }
+  .win .seg { font-size: 11.5px; font-weight: 600; color: var(--dim); padding: 5px 14px; cursor: pointer; transition: color .2s ease, background .2s ease; }
   .win .seg:not(.on):hover { color: var(--paper); }
-  .win .seg.on { background: var(--wc); color: #04110f; box-shadow: inset 0 1px 0 rgba(255,255,255,.25); }
-  .win .hero2 { display: flex; align-items: center; gap: 14px; position: relative; margin-top: 18px; flex-wrap: wrap; }
+  .win .seg.on { background: var(--wc); color: #fff; box-shadow: inset 0 1px 0 rgba(255,255,255,.25); }
+  .win .hero2 { display: flex; align-items: center; gap: 14px; position: relative; margin-top: 30px; flex-wrap: wrap; }
   .win .hero2 .cmark { width: 48px; height: 48px; }
   .win .h2copy { min-width: 0; flex: 1 1 200px; }
   .win .hrow { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
   .win .hname { font-family: var(--serif); font-size: 25px; font-weight: 600; line-height: 1; }
   .win .pill2 { display: inline-flex; align-items: center; gap: 5px; font-size: 10.5px; font-weight: 600; color: var(--dim); border: 1px solid var(--line); border-radius: 999px; padding: 3px 9px; }
   .win .pill2::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--faint); }
-  .win .pill2.ok { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 42%, var(--line)); }
-  .win .pill2.ok::before { background: var(--ok); box-shadow: 0 0 7px var(--ok); }
+  .win .editm { font-size: 11px; color: var(--faint); }
   .win .hsub { color: var(--dim); font-size: 12px; margin-top: 6px; }
   .win .act { display: flex; align-items: center; gap: 9px; margin-left: auto; flex: none; flex-wrap: wrap; }
   .win .launch { background: var(--wc); color: #04110f; border-radius: 9px; padding: 9px 14px; font-weight: 650; font-size: 12.5px; box-shadow: inset 0 1px 0 rgba(255,255,255,.25); white-space: nowrap; }
   .win .ghost { background: var(--ink-3); border: 1px solid var(--line); border-radius: 9px; padding: 9px 14px; font-weight: 500; font-size: 12.5px; color: var(--paper); white-space: nowrap; }
-  .win .stats { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 10px; margin-top: 20px; }
-  .win .stat { background: var(--ink-2); border: 1px solid var(--line-soft); border-radius: 12px; padding: 12px 13px; min-width: 0; }
-  .win .stat .k { font-size: 8.5px; letter-spacing: .07em; text-transform: uppercase; color: var(--faint); font-weight: 700; }
-  .win .stat .v { font-size: 15px; font-weight: 600; margin-top: 7px; }
+  .win .stats { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 1px; margin-top: 16px;
+                overflow: hidden; border: 1px solid var(--line-soft); border-radius: 14px; background: var(--line-soft); }
+  .win .stat { background: var(--ink-2); padding: 11px 13px; min-width: 0; }
+  .win .stat .k { display: inline-flex; align-items: center; gap: 5px; font-size: 8.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--faint); font-weight: 650; }
+  .win .stat .v { font-size: 13px; font-weight: 600; margin-top: 6px; }
+  .win .stat .kbtn { font-size: 8px; font-weight: 650; letter-spacing: .04em; text-transform: none; color: var(--dim);
+                     border: 1px solid var(--line); border-radius: 999px; padding: 1px 5px; }
+  .win .stat .kico { border-radius: 50%; padding: 0; width: 12px; height: 12px; display: grid; place-items: center; }
+  .win .stat .v.vdot::before { content: ""; display: inline-block; width: 7px; height: 7px; border-radius: 50%;
+                               background: var(--ok); box-shadow: 0 0 7px var(--ok); margin-right: 7px; }
   .win .wsx { margin-top: 22px; }
-  .win .wsx .wt { font-size: 13.5px; font-weight: 700; letter-spacing: .01em; }
-  .win .wsx .wsub { font-size: 11px; color: var(--faint); margin-top: 3px; }
+  .win .shd { margin-bottom: 9px; }
+  .win .shd h4 { margin: 0; font-size: 13px; font-weight: 650; }
+  .win .shd p { margin: 3px 0 0; font-size: 10.5px; color: var(--faint); }
   .win .wslist { margin-top: 12px; display: flex; flex-direction: column; gap: 9px; }
   .win .wsrow { display: flex; align-items: center; gap: 12px; background: var(--ink-2); border: 1px solid var(--line-soft); border-radius: 12px; padding: 11px 13px; }
   .win .wsrow .wico { width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center; background: var(--ink-3); color: var(--dim); font-size: 13px; flex: none; }
+  .win .wsrow-add { border-style: dashed; }
+  .win .wsrow-add .wpath { font-family: var(--sans); }
   .win .wcopy { display: flex; flex-direction: column; min-width: 0; flex: 1 1 auto; }
   .win .wname { font-size: 12.5px; font-weight: 600; }
   .win .wpath { font-family: var(--mono); font-size: 10.5px; color: var(--faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px; }
@@ -330,6 +344,8 @@
   .card .ico svg { width: 18px; height: 18px; stroke: var(--c); fill: none; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
   .card h3 { font-size: 18px; font-weight: 650; margin: 0 0 8px; letter-spacing: -.01em; }
   .card p { color: var(--dim); font-size: 14.5px; line-height: 1.55; margin: 0; }
+  .card kbd { font-family: inherit; font-size: 13px; font-weight: 600; color: var(--paper); background: var(--ink-3);
+              border: 1px solid var(--line); border-radius: 6px; padding: 1px 7px; margin: 0 1px; }
   .card.lg { grid-column: span 3; } .card.sm { grid-column: span 2; }
   .card.wide { grid-column: span 3; }
   .card.full { grid-column: span 6; display: flex; align-items: center; gap: 20px; }
@@ -410,7 +426,7 @@
     .wrap { padding: 0 20px; }
     .win .body { grid-template-columns: 1fr; }
     .win .side { border-right: 0; border-bottom: 1px solid var(--line-soft); }
-    .win .newp { display: none; }
+    .win .sfoot { display: none; }
     .win .act { margin-left: 0; }
     .win .wmeta { gap: 8px; }
     .bento { grid-template-columns: 1fr; }
@@ -518,7 +534,7 @@
       <a href="mailto:amory.dev@gmail.com">Contact</a>
     </nav>
     <span class="spacer"></span>
-    <a class="btn btn-ghost btn-gh" href="https://github.com/Amorydev/MultipleClaudeProfile" target="_blank" rel="noopener" aria-label="View Personae source on GitHub"><svg viewBox="0 0 16 16" width="17" height="17" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.02-1.49-2.22.48-2.69-1.07-2.69-1.07-.36-.92-.89-1.17-.89-1.17-.73-.5.05-.49.05-.49.81.06 1.24.83 1.24.83.72 1.23 1.88.87 2.34.67.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.83-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.6 7.6 0 012-.27c.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.52.56.83 1.28.83 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0016 8c0-4.42-3.58-8-8-8z"/></svg><span class="gh-label">GitHub</span></a>
+    <a class="btn btn-ghost btn-gh" href="https://github.com/Amorydev/Personae" target="_blank" rel="noopener" aria-label="View Personae source on GitHub"><svg viewBox="0 0 16 16" width="17" height="17" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.02-1.49-2.22.48-2.69-1.07-2.69-1.07-.36-.92-.89-1.17-.89-1.17-.73-.5.05-.49.05-.49.81.06 1.24.83 1.24.83.72 1.23 1.88.87 2.34.67.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.83-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.6 7.6 0 012-.27c.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.52.56.83 1.28.83 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0016 8c0-4.42-3.58-8-8-8z"/></svg><span class="gh-label">GitHub</span></a>
     <a class="btn btn-primary" href="#get">Download</a>
   </div>
 </header>
@@ -536,8 +552,8 @@
       </div>
       <div class="microtrust">
         <span class="chip"><svg class="i-ok" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6L9 17l-5-5"/></svg> Free</span>
-        <span class="chip"><svg class="i-priv" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l7 3v5c0 4.5-3 7.6-7 9-4-1.4-7-4.5-7-9V6z"/><path d="M9.4 12l1.9 1.9L15 10"/></svg> Local-first — data never leaves your Mac</span>
-        <span class="chip"><svg class="i-light" viewBox="0 0 24 24" aria-hidden="true"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg> ~3&nbsp;MB, native</span>
+        <span class="chip"><svg class="i-priv" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l7 3v5c0 4.5-3 7.6-7 9-4-1.4-7-4.5-7-9V6z"/><path d="M9.4 12l1.9 1.9L15 10"/></svg> Local-first — data never leaves your machine</span>
+        <span class="chip"><svg class="i-light" viewBox="0 0 24 24" aria-hidden="true"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg> A few&nbsp;MB, native</span>
       </div>
     </div>
 
@@ -549,23 +565,27 @@
           <div class="view desktop on" data-mode="desktop" aria-hidden="false">
             <div class="body">
               <div class="side">
+                <div class="shead"><div class="segwrap"><span class="seg on" data-go="desktop">Desktop</span><span class="seg" data-go="cli">CLI</span></div></div>
                 <div class="search"><span class="mag"></span> Search profiles…</div>
                 <div class="sect"><span>Desktop profiles</span><span class="ct">4</span></div>
                 <div class="prow sel"><span class="tile" style="background:var(--terra)"><svg><use href="#burst"/></svg></span><span class="pc"><span class="nm">Personal</span><span class="ps">Last active · Just now</span></span><span class="sdot"></span></div>
                 <div class="prow"><span class="tile" style="background:var(--teal)"><svg><use href="#burst"/></svg></span><span class="pc"><span class="nm">Work</span><span class="ps run">Running</span></span><span class="sdot ok"></span></div>
                 <div class="prow"><span class="tile" style="background:var(--violet)"><svg><use href="#burst"/></svg></span><span class="pc"><span class="nm">Acme client</span><span class="ps">Last active · 2h ago</span></span><span class="sdot"></span></div>
                 <div class="prow"><span class="tile" style="background:var(--amber)"><svg><use href="#burst"/></svg></span><span class="pc"><span class="nm">Studio</span><span class="ps">Last active · Yesterday</span></span><span class="sdot"></span></div>
-                <div class="newp"><span aria-hidden="true">+</span> New profile</div>
+                <div class="sfoot">
+                  <div class="tsw"><span class="tseg">Light</span><span class="tseg">Dark</span><span class="tseg on">Auto</span></div>
+                  <div class="sbtn"><span aria-hidden="true">⚙</span> Settings</div>
+                  <div class="newp"><span aria-hidden="true">+</span> New profile</div>
+                </div>
               </div>
               <div class="main">
-                <div class="segwrap"><span class="seg on" data-go="desktop">Desktop</span><span class="seg" data-go="cli">CLI</span></div>
                 <div class="hero2">
                   <span class="tile" style="background:var(--terra)"><svg><use href="#burst"/></svg></span>
                   <div class="h2copy"><div class="hrow"><span class="hname">Personal</span><span class="pill2">Ready</span></div><div class="hsub">Last active Just now</div></div>
                   <div class="act"><span class="launch">↗ Launch Desktop</span><span class="ghost">Show data…</span></div>
                 </div>
                 <div class="stats"><div class="stat"><div class="k">Storage</div><div class="v">7.1 MB</div></div><div class="stat"><div class="k">Last active</div><div class="v">Just now</div></div><div class="stat"><div class="k">Created</div><div class="v">Today</div></div></div>
-                <div class="pdata"><div class="k">Profile data</div><div class="card2"><span class="dico" aria-hidden="true">◇</span><span class="dcopy"><span class="dt">Claude Desktop data</span><span class="path">~/Library/Application Support/Claude-Personal</span></span><span class="dbtn">Show in Finder</span></div></div>
+                <div class="pdata"><div class="shd"><h4>Profile data</h4><p>Login, history, cache, and settings isolated for this profile.</p></div><div class="card2"><span class="dico" aria-hidden="true">◇</span><span class="dcopy"><span class="dt">Claude Desktop data</span><span class="path">~/Library/Application Support/Claude-Personal</span></span><span class="dbtn">Show in Finder</span></div></div>
                 <div class="adv"><div><div class="advt">Advanced details</div><div class="advs">Appearance, repair, and profile actions</div></div><span class="chev" aria-hidden="true">⌄</span></div>
               </div>
             </div>
@@ -574,26 +594,37 @@
           <div class="view cli" data-mode="cli" aria-hidden="true">
             <div class="body">
               <div class="side">
+                <div class="shead"><div class="segwrap"><span class="seg" data-go="desktop">Desktop</span><span class="seg on" data-go="cli">CLI</span></div></div>
                 <div class="search"><span class="mag"></span> Search accounts…</div>
                 <div class="sect"><span>CLI accounts</span><span class="ct">2</span></div>
                 <div class="prow sel"><span class="cmark sm">&gt;_</span><span class="pc"><span class="nm">Work CLI</span><span class="ps">work@corp.com</span></span><span class="sdot ok"></span></div>
                 <div class="prow"><span class="cmark sm" style="--wc:var(--terra)">&gt;_</span><span class="pc"><span class="nm">Personal CLI</span><span class="ps warn">Needs login</span></span><span class="sdot warn"></span></div>
-                <div class="newp"><span aria-hidden="true">+</span> New account</div>
+                <div class="sfoot">
+                  <div class="tsw"><span class="tseg">Light</span><span class="tseg">Dark</span><span class="tseg on">Auto</span></div>
+                  <div class="sbtn"><span aria-hidden="true">⚙</span> Settings</div>
+                  <div class="newp"><span aria-hidden="true">+</span> New account</div>
+                </div>
               </div>
               <div class="main">
-                <div class="segwrap"><span class="seg" data-go="desktop">Desktop</span><span class="seg on" data-go="cli">CLI</span></div>
                 <div class="hero2">
                   <span class="cmark lg">&gt;_</span>
-                  <div class="h2copy"><div class="hrow"><span class="hname">Work CLI</span><span class="pill2 ok">Signed in</span></div><div class="hsub">work@corp.com</div></div>
+                  <div class="h2copy"><div class="hrow"><span class="hname">Work CLI</span><span class="editm" aria-hidden="true">✎</span></div><div class="hsub">work@corp.com</div></div>
                   <div class="act"><span class="launch">↗ Launch CLI</span><span class="ghost">Open project…</span></div>
                 </div>
-                <div class="stats"><div class="stat"><div class="k">Storage</div><div class="v">12 MB</div></div><div class="stat"><div class="k">Last active</div><div class="v">5m ago</div></div><div class="stat"><div class="k">Created</div><div class="v">Yesterday</div></div></div>
+                <div class="stats">
+                  <div class="stat"><div class="k">Status</div><div class="v vdot">Signed in</div></div>
+                  <div class="stat"><div class="k">Storage</div><div class="v">12 MB</div></div>
+                  <div class="stat"><div class="k">Last active</div><div class="v">5m ago</div></div>
+                  <div class="stat"><div class="k">Created</div><div class="v">Yesterday</div></div>
+                  <div class="stat"><div class="k">Session expires <span class="kbtn">Relog</span></div><div class="v">in 60 days</div></div>
+                  <div class="stat"><div class="k">Usage <span class="kbtn kico">↻</span></div><div class="v">29% session · 7% week</div></div>
+                </div>
                 <div class="wsx">
-                  <div class="wt">Workspaces</div>
-                  <div class="wsub">Projects that reopen with this account active.</div>
+                  <div class="shd"><h4>Workspaces</h4><p>Projects that reopen with this account active.</p></div>
                   <div class="wslist">
                     <div class="wsrow"><span class="wico" aria-hidden="true">◇</span><span class="wcopy"><span class="wname">demo</span><span class="wpath">/Users/you/Projects/demo</span></span><span class="wmeta"><span class="badge">Cursor</span><span class="wtime">10m ago</span></span><span class="wdel" aria-hidden="true">×</span></div>
                     <div class="wsrow"><span class="wico" aria-hidden="true">◇</span><span class="wcopy"><span class="wname">api</span><span class="wpath">/Users/you/Projects/api</span></span><span class="wmeta"><span class="badge">VS Code</span><span class="wtime">2h ago</span></span><span class="wdel" aria-hidden="true">×</span></div>
+                    <div class="wsrow wsrow-add"><span class="wico" aria-hidden="true">◇</span><span class="wcopy"><span class="wname">Open project…</span><span class="wpath">Bind another project to this account</span></span></div>
                   </div>
                 </div>
                 <div class="adv"><div><div class="advt">Advanced details</div><div class="advs">Config, login, and account actions</div></div><span class="chev" aria-hidden="true">⌄</span></div>
@@ -693,22 +724,32 @@
       <div class="card wide reveal" style="--c:var(--azure)">
         <div class="ico"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 9l3 3-3 3M13 15h4"/></svg></div>
         <h3>Claude Code, per account</h3>
-        <p>Each CLI account carries its own real Claude sign-in — full email and org identity — and refreshes on its own. Type <code>claude</code> and it runs as the right account, every time.</p>
+        <p>Each CLI account carries its own real Claude sign-in — full email and org identity — and refreshes on its own. Type <code>claude</code> and it runs as the right account, every time. Or point an account at an API key instead, with its own base URL and model.</p>
       </div>
       <div class="card wide reveal" style="--c:var(--violet)">
         <div class="ico"><svg viewBox="0 0 24 24"><path d="M4 5h16v11H4zM9 20h6M12 16v4"/><path d="M8 9l2 2-2 2"/></svg></div>
         <h3>Open any project in your IDE</h3>
         <p>Bind a folder to an account and Personae wires <code>CLAUDE_CONFIG_DIR</code> into VS Code, Cursor, Windsurf or Antigravity — every terminal opens Claude Code already signed in to that account.</p>
       </div>
+      <div class="card wide reveal" style="--c:var(--azure)">
+        <div class="ico"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/></svg></div>
+        <h3>Knows when each login expires</h3>
+        <p>Every CLI account shows when its session runs out and how much of your quota it has burned — this session and this week — pulled live from Anthropic when you ask. One click to sign it in again.</p>
+      </div>
+      <div class="card wide reveal" style="--c:var(--amber)">
+        <div class="ico"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h10"/><circle cx="17" cy="17" r="2.5"/></svg></div>
+        <h3>Fits your setup</h3>
+        <p>Launch accounts in the terminal you actually use — or any program you point it at. Sign in through the browser you choose, optionally in a clean signed-out session so a second account doesn't inherit the first one's login. Light, dark, or follow the system.</p>
+      </div>
       <div class="card sm reveal" style="--c:var(--rose)">
         <div class="ico"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="2.5" fill="var(--c)" stroke="none"/></svg></div>
         <h3>Colour is identity</h3>
-        <p>A tinted icon and accent per profile, plus a green dot when it's running. Know which account you're in at a glance.</p>
+        <p>Pick from 11 tints. Each profile's icon is tinted to match and registered with the OS, so it appears in Spotlight and the Dock as its own app — plus a green dot here when it's running.</p>
       </div>
       <div class="card sm reveal" style="--c:var(--amber)">
         <div class="ico"><svg viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="12" rx="2"/><path d="M7 10h0M11 10h0M15 10h0M8 14h8"/></svg></div>
         <h3>Made for the keyboard</h3>
-        <p>⌘N for a new one, ⌘L to launch, ⏎ to open, ⌫ to remove. Search and switch without touching the mouse.</p>
+        <p><kbd>/</kbd> to search, <kbd>↑</kbd><kbd>↓</kbd> to move, <kbd>⏎</kbd> to launch, <kbd>⌘N</kbd> for a new one. Switch accounts without touching the mouse.</p>
       </div>
       <div class="card sm reveal" style="--c:var(--ok)">
         <div class="ico"><svg viewBox="0 0 24 24"><path d="M12 3l7 3v5c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z"/><path d="M9.5 12l1.8 1.8L15 10"/></svg></div>
@@ -818,7 +859,7 @@
       <div style="padding:0 16px 14px">
         <p style="margin:10px 0 0"><b style="color:var(--paper)">macOS</b> — right-click the app and choose <b>Open</b>, then confirm. (Or go to System Settings → Privacy &amp; Security → <b>Open Anyway</b>.)</p>
         <p style="margin:10px 0 0"><b style="color:var(--paper)">Windows</b> — if a blue “Windows protected your PC” box appears, click <b>More info</b> → <b>Run anyway</b>.</p>
-        <p style="margin:12px 0 0;font-size:13px">Personae isn’t code-signed yet, so the OS shows this one-time warning. It’s safe — <a href="https://github.com/Amorydev/MultipleClaudeProfile" target="_blank" rel="noopener" style="color:inherit;text-decoration:underline">the code is public</a> and everything runs locally, with no account or telemetry.</p>
+        <p style="margin:12px 0 0;font-size:13px">Personae isn’t code-signed yet, so the OS shows this one-time warning. It’s safe — <a href="https://github.com/Amorydev/Personae" target="_blank" rel="noopener" style="color:inherit;text-decoration:underline">the code is public</a> and everything runs locally, with no account or telemetry.</p>
       </div>
     </details>
     <div class="contact">Questions or feedback? <a href="mailto:amory.dev@gmail.com">amory.dev@gmail.com</a></div>
@@ -834,7 +875,7 @@
       <a href="#features">Features</a>
       <a href="#how">How it works</a>
       <a href="#get">Download</a>
-      <a href="https://github.com/Amorydev/MultipleClaudeProfile" target="_blank" rel="noopener">GitHub</a>
+      <a href="https://github.com/Amorydev/Personae" target="_blank" rel="noopener">GitHub</a>
       <a href="mailto:amory.dev@gmail.com">amory.dev@gmail.com</a>
     </div>
     <a href="https://launchstag.com/p/tool-1786765815290" target="_blank" rel="noopener" style="display:inline-block;margin-top:18px"><img src="https://launchstag.com/badge-dark.svg" alt="Featured on Launchstag" width="198" height="62" /></a>
@@ -886,7 +927,8 @@
     mock.addEventListener('mouseleave', start);
   })();
 
-  // Download buttons link directly to the GitHub release assets.
+  // Download buttons point at the fixed /dl/latest/ paths the release
+  // workflow uploads each build to (see .github/workflows/release.yml).
 </script>
 
 </body>

@@ -52,10 +52,7 @@ export const useCliStore = defineStore("cli", () => {
   const workspacesFor = computed(() => (slug: string) => cliWorkspaces.value.filter((w) => w.account_slug === slug));
 
   watch(filteredCli, (items) => {
-    if (items.length && !items.some((p) => p.slug === cliSelected.value)) {
-      cliSelected.value = items[0].slug;
-      refreshUsage(items[0]);
-    }
+    if (items.length && !items.some((p) => p.slug === cliSelected.value)) cliSelected.value = items[0].slug;
   });
 
   // Covers every way an account becomes "current" — first account
@@ -181,7 +178,6 @@ export const useCliStore = defineStore("cli", () => {
     let i = items.findIndex((p) => p.slug === cliSelected.value);
     i = Math.max(0, Math.min(items.length - 1, (i < 0 ? 0 : i) + delta));
     cliSelected.value = items[i].slug;
-    refreshUsage(items[i]);
   }
 
   async function doCliLogin() {

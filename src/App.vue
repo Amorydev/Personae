@@ -4,7 +4,7 @@ import { useUiStore } from "./stores/ui";
 import { useDesktopStore } from "./stores/desktop";
 import { useCliStore } from "./stores/cli";
 import { useGlobalShortcuts } from "./composables/useGlobalShortcuts";
-import { cliColor } from "./lib/format";
+import { accentInk, cliColor } from "./lib/format";
 import DesktopSidebar from "./components/desktop/DesktopSidebar.vue";
 import DesktopDetail from "./components/desktop/DesktopDetail.vue";
 import CreateProfileModal from "./components/desktop/CreateProfileModal.vue";
@@ -34,6 +34,8 @@ useGlobalShortcuts();
 
 const desktopAccent = computed(() => desktop.current?.tint || "#c2714f");
 const cliAccent = computed(() => (cli.cliCurrent ? cliColor(cli.cliCurrent) : "#c2714f"));
+const desktopInk = computed(() => accentInk(desktopAccent.value));
+const cliInk = computed(() => accentInk(cliAccent.value));
 
 onMounted(() => {
   desktop.reload();
@@ -56,7 +58,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <div id="app-desktop" class="app" :class="{ hidden: ui.view === 'cli' }" :style="{ '--accent': desktopAccent }">
+  <div id="app-desktop" class="app" :class="{ hidden: ui.view === 'cli' }" :style="{ '--accent': desktopAccent, '--accent-ink': desktopInk }">
     <DesktopSidebar />
     <main class="detail">
       <div class="detail-head" data-tauri-drag-region></div>
@@ -67,7 +69,7 @@ onMounted(() => {
     </main>
   </div>
 
-  <div id="cli-view" class="app" :class="{ hidden: ui.view !== 'cli' }" :style="{ '--accent': cliAccent }">
+  <div id="cli-view" class="app" :class="{ hidden: ui.view !== 'cli' }" :style="{ '--accent': cliAccent, '--accent-ink': cliInk }">
     <CliSidebar />
     <main class="detail cli-detail">
       <div class="detail-head" data-tauri-drag-region></div>
