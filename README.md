@@ -174,6 +174,8 @@ Personae stores everything under your user directory. On **macOS**:
 
 On **Windows**, the equivalents live under `%APPDATA%` / `%LOCALAPPDATA%`. CLI OAuth credentials are held by the OS keychain (managed by Claude Code), never by Personae.
 
+> **Known limitation — migrating on macOS.** Older builds stored CLI data under `ClaudeProfilesCLI` / `Claude Profiles CLI`; Personae now uses `Personae/CLI` and moves any existing data across automatically on first launch. Because macOS keys each CLI login's keychain slot to its config-dir *path*, an **already-signed-in CLI account has to sign in again once** after this move — the account's data itself is preserved, only the keychain link needs re-establishing. Windows is unaffected (its credential is a plaintext file that moves inside the folder).
+
 ---
 
 ## Keyboard shortcuts
