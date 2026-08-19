@@ -27,7 +27,9 @@ The installer directory dl/ is excluded unconditionally, including under
 --prune. It is owned by .github/workflows/release.yml, holds the .dmg and
 .exe the landing links to, and is not reproducible from this repo.
 
-Configuration, from scripts/deploy-landing.env or the environment:
+Configuration, from scripts/deploy-landing.env or the environment.
+An environment variable wins over the same key in the file, so CI can
+pass secrets without the file getting in the way:
 
   LANDING_HOST    required   ssh host, e.g. claudemux.com
   LANDING_USER    required   ssh user
@@ -56,18 +58,37 @@ while [ $# -gt 0 ]; do
   shift
 done
 
+CONFIG_KEYS="LANDING_HOST LANDING_USER LANDING_PATH LANDING_PORT LANDING_SSH_KEY LANDING_URL"
+
+for key in $CONFIG_KEYS; do
+  eval "PRESET_$key=\${$key:-}"
+done
+
 if [ -f "$ENV_FILE" ]; then
   set -a
   . "$ENV_FILE"
   set +a
 fi
 
+for key in $CONFIG_KEYS; do
+  eval "preset=\$PRESET_$key"
+  [ -n "$preset" ] && eval "$key=\$preset"
+done
+
 : "${LANDING_PORT:=22}"
 : "${LANDING_URL:=https://claudemux.com/}"
 
-[ -n "${LANDING_HOST:-}" ] || die "LANDING_HOST is not set (see --help)"
-[ -n "${LANDING_USER:-}" ] || die "LANDING_USER is not set (see --help)"
-[ -n "${LANDING_PATH:-}" ] || die "LANDING_PATH is not set (see --help)"
+require() {
+  [ -n "$2" ] && return 0
+  if [ -f "$ENV_FILE" ]; then
+    die "$1 is empty in scripts/deploy-landing.env — fill it in and rerun"
+  fi
+  die "$1 is not set — copy scripts/deploy-landing.env.example to scripts/deploy-landing.env and fill it in"
+}
+
+require LANDING_HOST "${LANDING_HOST:-}"
+require LANDING_USER "${LANDING_USER:-}"
+require LANDING_PATH "${LANDING_PATH:-}"
 
 case "$LANDING_PATH" in
   /|/root|/home|/var|/var/www|/etc|/usr|"")
