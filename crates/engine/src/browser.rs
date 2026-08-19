@@ -134,6 +134,11 @@ fn resolve_browser() -> Option<(PathBuf, bool)> {
     Some((exe, !prefs.reuse_profile))
 }
 
+#[cfg(any(windows, test))]
+fn guest_wrapper_body(exe: &str) -> String {
+    format!("@echo off\r\nstart \"\" \"{exe}\" --guest \"%~1\"\r\n")
+}
+
 /// Writes a wrapper `.cmd` (if a specific browser + fresh-session flag is
 /// needed) and returns the value `BROWSER` should be set to in the login
 /// script, or `None` to leave `BROWSER` unset (system default handles it).
@@ -147,10 +152,7 @@ pub fn prepare_login_browser(login_dir: &Path) -> Option<String> {
         return Some(exe.display().to_string());
     }
     let wrapper = login_dir.join("browser-launcher.cmd");
-    let body = format!(
-        "@echo off\r\nstart \"\" \"{}\" --guest %1\r\n",
-        exe.display()
-    );
+    let body = guest_wrapper_body(&exe.display().to_string());
     std::fs::create_dir_all(login_dir).ok()?;
     std::fs::write(&wrapper, body).ok()?;
     Some(wrapper.display().to_string())
@@ -177,5 +179,12 @@ mod tests {
         assert_eq!(loaded.reuse_profile, Some(false));
 
         std::fs::remove_file(&f).ok();
+    }
+
+    #[test]
+    fn guest_wrapper_quotes_the_url_arg() {
+        let body = guest_wrapper_body(r"C:\Program Files\Google\Chrome\Application\chrome.exe");
+        assert!(body.contains("--guest \"%~1\""), "URL arg must be quoted: {body}");
+        assert!(!body.contains("--guest %1"), "must not use a bare %1: {body}");
     }
 }
