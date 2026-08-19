@@ -313,7 +313,7 @@ input, .path { -webkit-user-select: text; user-select: text; }
   border-radius: var(--r-xl); padding: 20px; display: flex; flex-direction: column; gap: 14px;
   box-shadow: 0 24px 60px rgba(0,0,0,.5);
 }
-.modal-title { font-family: var(--serif); font-size: 19px; font-weight: 600; }
+.modal-title { font-family: var(--serif); font-size: 19px; font-weight: 600; overflow-wrap: break-word; }
 .modal-card label.k { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--text-mute); font-weight: 600; }
 .modal-card input.text, .modal-card select.text {
   all: unset; background: var(--input-bg); border: 1px solid var(--border); border-radius: var(--r);
