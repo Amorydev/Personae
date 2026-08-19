@@ -11,13 +11,26 @@ function apply(mode: ThemeMode) {
   else root.setAttribute("data-theme", mode);
 }
 
+function readStoredMode(): ThemeMode {
+  try {
+    const v = localStorage.getItem(STORAGE_KEY);
+    if (v === "light" || v === "dark" || v === "system") return v;
+  } catch {}
+  return "system";
+}
+
+function persistMode(mode: ThemeMode) {
+  try {
+    localStorage.setItem(STORAGE_KEY, mode);
+  } catch {}
+}
+
 export const useThemeStore = defineStore("theme", () => {
-  const stored = (localStorage.getItem(STORAGE_KEY) as ThemeMode | null) ?? "system";
-  const mode = ref<ThemeMode>(stored === "light" || stored === "dark" || stored === "system" ? stored : "system");
+  const mode = ref<ThemeMode>(readStoredMode());
   apply(mode.value);
 
   watch(mode, (m) => {
-    localStorage.setItem(STORAGE_KEY, m);
+    persistMode(m);
     apply(m);
   });
 
