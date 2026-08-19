@@ -9,10 +9,10 @@
   "homepage": "https://claudemux.com",
   "repository": {
     "type": "git",
-    "url": "https://github.com/Amorydev/MultipleClaudeProfile.git"
+    "url": "https://github.com/Amorydev/Personae.git"
   },
   "bugs": {
-    "url": "https://github.com/Amorydev/MultipleClaudeProfile/issues"
+    "url": "https://github.com/Amorydev/Personae/issues"
   },
   "bin": {
     "personae": "bin/personae.js"
