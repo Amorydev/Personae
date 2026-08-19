@@ -49,7 +49,7 @@ pub struct CliProfile {
 /// Parse `claudeAiOauth.expiresAt` / `.refreshTokenExpiresAt` (unix ms) out of a
 /// `.credentials.json` body. Returns `(None, None)` for malformed/absent input —
 /// callers treat that the same as "unknown", not an error.
-#[cfg_attr(not(windows), allow(dead_code))]
+#[cfg_attr(not(any(target_os = "macos", windows)), allow(dead_code))]
 fn extract_token_expiry(json: &str) -> (Option<u64>, Option<u64>) {
     let v: serde_json::Value = match serde_json::from_str(json) {
         Ok(v) => v,
@@ -65,7 +65,7 @@ fn extract_token_expiry(json: &str) -> (Option<u64>, Option<u64>) {
 /// `.credentials.json` body — real fields confirmed present on a live account
 /// this session. `(None, None)` for malformed/absent input (e.g. api-key-mode
 /// accounts have no claudeAiOauth object at all).
-#[cfg_attr(not(windows), allow(dead_code))]
+#[cfg_attr(not(any(target_os = "macos", windows)), allow(dead_code))]
 fn extract_plan_tier(json: &str) -> (Option<String>, Option<String>) {
     let v: serde_json::Value = match serde_json::from_str(json) {
         Ok(v) => v,
@@ -155,6 +155,13 @@ fn resolve_config_dir(slug: &str) -> PathBuf { imp::config_dir(slug) }
 fn resolve_config_dir(slug: &str) -> PathBuf { imp_win::config_dir(slug) }
 #[cfg(not(any(target_os = "macos", windows)))]
 fn resolve_config_dir(slug: &str) -> PathBuf { config_root().join(slug) }
+
+#[cfg(target_os = "macos")]
+fn read_credentials_json(slug: &str) -> Option<String> { imp::read_login_credentials(slug) }
+#[cfg(not(target_os = "macos"))]
+fn read_credentials_json(slug: &str) -> Option<String> {
+    std::fs::read_to_string(resolve_config_dir(slug).join(".credentials.json")).ok()
+}
 
 /// Resolves a display *name* to its real slug. NOT just `slugify(name)`: a
 /// renamed account's slug can diverge from its current display name — on
@@ -309,16 +316,10 @@ fn parse_utilization_percentages(util: Option<&serde_json::Value>) -> (Option<u3
 /// expose a live bearer token more broadly than this platform's existing,
 /// already-accepted exposure (the plaintext `.credentials.json` itself — see
 /// `imp_win`'s module doc for why: no Keychain on Windows).
-///
-/// Windows-functional only for now: macOS keeps the OAuth credential in the
-/// Keychain, not a plaintext file, so this reads nothing there and returns a
-/// plain "no stored credentials" error rather than reaching into the
-/// Keychain for a token just to make this one call.
 pub fn fetch_live_usage(name: &str) -> Result<(Option<u32>, Option<u32>), String> {
     let slug = resolve_slug(name);
-    let dir = resolve_config_dir(&slug);
-    let creds = std::fs::read_to_string(dir.join(".credentials.json"))
-        .map_err(|_| "No stored credentials for this account.".to_string())?;
+    let creds = read_credentials_json(&slug)
+        .ok_or_else(|| "No stored credentials for this account.".to_string())?;
     let v: serde_json::Value = serde_json::from_str(&creds).map_err(|e| e.to_string())?;
     let token = v.get("claudeAiOauth").and_then(|o| o.get("accessToken")).and_then(|t| t.as_str())
         .ok_or("This account has no OAuth access token (API-key accounts have no Claude usage cap).")?;
@@ -588,6 +589,13 @@ mod imp {
         let svc = login_keychain_service(slug);
         let user = std::env::var("USER").unwrap_or_default();
         run("security", &["find-generic-password", "-s", &svc, "-a", &user]).0
+    }
+
+    pub fn read_login_credentials(slug: &str) -> Option<String> {
+        let svc = login_keychain_service(slug);
+        let user = std::env::var("USER").unwrap_or_default();
+        let (ok, out) = run("security", &["find-generic-password", "-s", &svc, "-a", &user, "-w"]);
+        if ok && !out.trim().is_empty() { Some(out) } else { None }
     }
 
     /// Mark this profile's config dir as onboarded so interactive `claude` skips
@@ -1009,6 +1017,11 @@ pub fn list() -> Vec<CliProfile> {
             let oauth_logged_in = imp::login_present(&slug);
             if oauth_logged_in { imp::mark_onboarded(&slug); } // self-heal: skip first-run menu once logged in
             let logged_in = oauth_logged_in || provider.auth_mode == "api_key";
+            let keychain_creds = if oauth_logged_in { imp::read_login_credentials(&slug) } else { None };
+            let (token_expires_at, refresh_expires_at) = keychain_creds.as_deref()
+                .map(extract_token_expiry).unwrap_or((None, None));
+            let (subscription_type, rate_limit_tier) = keychain_creds.as_deref()
+                .map(extract_plan_tier).unwrap_or((None, None));
             let md = std::fs::metadata(&cfg).ok();
             let created = md.as_ref().and_then(|m| m.created().ok()).and_then(to_secs);
             let last_active = md.as_ref().and_then(|m| m.modified().ok()).and_then(to_secs);
@@ -1018,10 +1031,8 @@ pub fn list() -> Vec<CliProfile> {
                 launcher_path: p.display().to_string(),
                 logged_in, account_email, data_size, created, last_active,
                 auth_mode: provider.auth_mode, provider_model: provider.model,
-                // macOS keeps the OAuth credential in the Keychain, not a plaintext
-                // file — not read here (see the field doc comment on CliProfile).
-                token_expires_at: None, refresh_expires_at: None,
-                subscription_type: None, rate_limit_tier: None,
+                token_expires_at, refresh_expires_at,
+                subscription_type, rate_limit_tier,
                 session_usage_pct, weekly_usage_pct,
             });
         }
