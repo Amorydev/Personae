@@ -62,37 +62,17 @@ export function sessionExpiry(refreshExpiresAtMs: number | null | undefined): Se
   return { label: `Signed in until ${new Date(refreshExpiresAtMs).toLocaleDateString()}`, warn: false };
 }
 
-// Plan/quota tier label — not live usage telemetry (Claude Code doesn't
-// expose remaining-quota numbers on disk anywhere, so this never fabricates
-// one). `rateLimitTier` is preferred since it's more specific (e.g. "20x");
-// falls back to the bare subscription type, then "—" for accounts with
-// neither (API-key-mode accounts have no plan tier at all).
-export function planLabel(subscriptionType: string | null | undefined, rateLimitTier: string | null | undefined): string {
-  const raw = rateLimitTier || subscriptionType;
-  if (!raw) return "—";
-  return raw
-    .replace(/^default_claude_/, "")
-    .split("_")
-    .map((w) => (w.length <= 3 && /\d/.test(w) ? w : w.charAt(0).toUpperCase() + w.slice(1)))
-    .join(" ");
-}
-
 // Live usage percentages (Claude Code's own `/usage` cache, refreshed by the
 // CLI itself — see `cli::extract_usage_utilization`'s doc comment for the
-// on-disk shape). Falls back to the static plan-tier label only when neither
-// percentage has been populated yet, e.g. an account that's never made a real
-// request — never fabricates a number.
-export function usageLabel(
-  sessionPct: number | null | undefined,
-  weeklyPct: number | null | undefined,
-  subscriptionType: string | null | undefined,
-  rateLimitTier: string | null | undefined
-): string {
-  if (sessionPct == null && weeklyPct == null) return planLabel(subscriptionType, rateLimitTier);
+// on-disk shape). "—" when neither percentage has ever been populated (e.g.
+// an account that's never made a real request) — no plan-tier fallback here:
+// that's a static label, not a usage number, and showing it in this slot
+// reads as a live number when it isn't one.
+export function usageLabel(sessionPct: number | null | undefined, weeklyPct: number | null | undefined): string {
   const parts: string[] = [];
   if (sessionPct != null) parts.push(`${sessionPct}% session`);
   if (weeklyPct != null) parts.push(`${weeklyPct}% week`);
-  return parts.join(" · ");
+  return parts.length ? parts.join(" · ") : "—";
 }
 
 export function cliColor(p: CliProfile | DesktopProfile | null | undefined): string {

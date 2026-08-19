@@ -104,7 +104,7 @@ function openIde() {
             @click="cli.refreshUsageLive(cliCurrent)"
           >↻</button>
         </span>
-        <strong>{{ usageLabel(cliCurrent.session_usage_pct, cliCurrent.weekly_usage_pct, cliCurrent.subscription_type, cliCurrent.rate_limit_tier) }}</strong>
+        <strong>{{ usageLabel(cliCurrent.session_usage_pct, cliCurrent.weekly_usage_pct) }}</strong>
       </div>
     </section>
     <section v-else class="cli-setup-card">

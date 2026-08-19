@@ -62,7 +62,16 @@ export const useCliStore = defineStore("cli", () => {
   // cliSelected. Throttled to once per hour per account (see
   // refreshUsageLive) so re-selecting the same account repeatedly doesn't
   // keep hitting Anthropic's endpoint.
-  watch(cliCurrent, (p) => {
+  //
+  // Watches cliSelected (the plain slug ref), NOT cliCurrent: cliCurrent is a
+  // computed `.find()` into cliProfiles, and reloadCli() replaces that whole
+  // array (fresh object instances) on every call — e.g. every throttled
+  // window-focus reload — so cliCurrent's *reference* changes even when the
+  // selected account hasn't. Watching the primitive slug means Vue's own
+  // same-value skip applies, so re-resolving to the same account after a
+  // background reload correctly does NOT refire this.
+  watch(cliSelected, (slug) => {
+    const p = cliProfiles.value.find((x) => x.slug === slug);
     if (p) refreshUsageLive(p, { silent: true });
   });
 
