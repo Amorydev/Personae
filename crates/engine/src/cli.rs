@@ -264,15 +264,15 @@ pub fn extract_usage_utilization(json: &str) -> (Option<u32>, Option<u32>) {
     let session = util
         .and_then(|u| u.get("five_hour"))
         .and_then(|f| f.get("utilization"))
-        .and_then(|x| x.as_u64())
-        .map(|x| x as u32);
+        .and_then(|x| x.as_f64())
+        .map(|x| x.round() as u32);
     let weekly = util
         .and_then(|u| u.get("limits"))
         .and_then(|l| l.as_array())
         .and_then(|arr| arr.iter().find(|e| e.get("kind").and_then(|k| k.as_str()) == Some("weekly_all")))
         .and_then(|e| e.get("percent"))
-        .and_then(|x| x.as_u64())
-        .map(|x| x as u32);
+        .and_then(|x| x.as_f64())
+        .map(|x| x.round() as u32);
     (session, weekly)
 }
 
@@ -1108,6 +1108,10 @@ mod tests {
         assert_eq!(extract_usage_utilization(j), (Some(29), Some(7)));
         assert_eq!(extract_usage_utilization(r#"{"no":"usage"}"#), (None, None));
         assert_eq!(extract_usage_utilization("not json"), (None, None));
+        let jf = r#"{"cachedUsageUtilization":{"utilization":{"five_hour":{"utilization":29.6},"limits":[
+            {"kind":"weekly_all","percent":7.4}
+        ]}}}"#;
+        assert_eq!(extract_usage_utilization(jf), (Some(30), Some(7)));
     }
 
     #[test]
