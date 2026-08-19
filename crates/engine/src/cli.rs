@@ -154,6 +154,18 @@ fn resolve_config_dir(slug: &str) -> PathBuf { imp_win::config_dir(slug) }
 #[cfg(not(any(target_os = "macos", windows)))]
 fn resolve_config_dir(slug: &str) -> PathBuf { config_root().join(slug) }
 
+/// Fresh usage percentages for one account, re-read from disk on demand —
+/// used to refresh just-selected/just-launched accounts without waiting for
+/// (or paying the cost of) a full `list()` pass over every account.
+pub fn get_usage(name: &str) -> (Option<u32>, Option<u32>) {
+    let slug = crate::platform::slugify(name);
+    let dir = resolve_config_dir(&slug);
+    std::fs::read_to_string(dir.join(".claude.json")).ok()
+        .as_deref()
+        .map(extract_usage_utilization)
+        .unwrap_or((None, None))
+}
+
 pub fn get_provider_config(name: &str) -> Result<ProviderConfig, String> {
     let slug = crate::platform::slugify(name);
     let dir = resolve_config_dir(&slug);

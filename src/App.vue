@@ -3,7 +3,6 @@ import { computed, onMounted } from "vue";
 import { useUiStore } from "./stores/ui";
 import { useDesktopStore } from "./stores/desktop";
 import { useCliStore } from "./stores/cli";
-import { useTerminalStore } from "./stores/terminal";
 import { useGlobalShortcuts } from "./composables/useGlobalShortcuts";
 import { cliColor } from "./lib/format";
 import DesktopSidebar from "./components/desktop/DesktopSidebar.vue";
@@ -27,21 +26,12 @@ import { useThemeStore } from "./stores/theme";
 const ui = useUiStore();
 const desktop = useDesktopStore();
 const cli = useCliStore();
-const terminal = useTerminalStore();
 useThemeStore(); // applies the saved/system theme on mount; no local state needed here
 
 useGlobalShortcuts();
 
 const desktopAccent = computed(() => desktop.current?.tint || "#c2714f");
 const cliAccent = computed(() => (cli.cliCurrent ? cliColor(cli.cliCurrent) : "#c2714f"));
-
-function setView(v: "desktop" | "cli") {
-  ui.setView(v);
-  if (v === "cli") {
-    cli.reloadCli();
-    terminal.load();
-  }
-}
 
 onMounted(() => {
   desktop.reload();
@@ -63,14 +53,7 @@ onMounted(() => {
   <div id="app-desktop" class="app" :class="{ hidden: ui.view === 'cli' }" :style="{ '--accent': desktopAccent }">
     <DesktopSidebar />
     <main class="detail">
-      <div class="detail-head" data-tauri-drag-region>
-        <div class="spacer" data-tauri-drag-region></div>
-        <div class="segmented">
-          <button class="seg" :class="{ sel: ui.view === 'desktop' }" @click="setView('desktop')">Desktop</button>
-          <button class="seg" :class="{ sel: ui.view === 'cli' }" @click="setView('cli')">CLI</button>
-        </div>
-        <div class="spacer" data-tauri-drag-region></div>
-      </div>
+      <div class="detail-head" data-tauri-drag-region></div>
       <div v-if="!desktop.claudeFound" class="warn">⚠️ Claude Desktop not found. Install it, or set its location in ⚙ Settings.</div>
       <div class="detail-body desktop-detail-body">
         <DesktopDetail />
@@ -81,14 +64,7 @@ onMounted(() => {
   <div id="cli-view" class="app" :class="{ hidden: ui.view !== 'cli' }" :style="{ '--accent': cliAccent }">
     <CliSidebar />
     <main class="detail cli-detail">
-      <div class="detail-head" data-tauri-drag-region>
-        <div class="spacer" data-tauri-drag-region></div>
-        <div class="segmented">
-          <button class="seg" :class="{ sel: ui.view === 'desktop' }" @click="setView('desktop')">Desktop</button>
-          <button class="seg" :class="{ sel: ui.view === 'cli' }" @click="setView('cli')">CLI</button>
-        </div>
-        <div class="spacer" data-tauri-drag-region></div>
-      </div>
+      <div class="detail-head" data-tauri-drag-region></div>
       <div class="detail-body cli-detail-body">
         <CliDetail />
       </div>

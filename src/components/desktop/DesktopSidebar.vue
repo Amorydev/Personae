@@ -2,18 +2,25 @@
 import { storeToRefs } from "pinia";
 import { useDesktopStore } from "../../stores/desktop";
 import { useUiStore } from "../../stores/ui";
+import { useViewSwitch } from "../../composables/useViewSwitch";
 import { relTime } from "../../lib/format";
 import Tile from "../Tile.vue";
 import ThemeSwitch from "../ThemeSwitch.vue";
 
 const desktop = useDesktopStore();
 const ui = useUiStore();
+const { setView } = useViewSwitch();
 const { profiles, filtered, selected, query, initialized } = storeToRefs(desktop);
 </script>
 
 <template>
   <aside class="sidebar">
-    <div class="side-head" data-tauri-drag-region></div>
+    <div class="side-head" data-tauri-drag-region>
+      <div class="segmented">
+        <button class="seg" :class="{ sel: ui.view === 'desktop' }" @click="setView('desktop')">Desktop</button>
+        <button class="seg" :class="{ sel: ui.view === 'cli' }" @click="setView('cli')">CLI</button>
+      </div>
+    </div>
     <div class="search">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
         <circle cx="11" cy="11" r="7" /><line x1="21" y1="21" x2="16.65" y2="16.65" />

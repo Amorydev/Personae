@@ -45,6 +45,24 @@ export const useCliStore = defineStore("cli", () => {
 
   function selectCliProfile(p: CliProfile) {
     cliSelected.value = p.slug;
+    refreshUsage(p);
+  }
+
+  // Fire-and-forget: re-reads just this account's cached /usage numbers from
+  // disk and patches them in reactively. Never awaited by callers — selecting
+  // an account should never block on it, and a failure here shouldn't surface
+  // as an error toast for what's just a background refresh.
+  async function refreshUsage(p: CliProfile) {
+    try {
+      const [sessionPct, weeklyPct] = await invoke<[number | null, number | null]>("get_cli_usage", { name: p.name });
+      const target = cliProfiles.value.find((x) => x.slug === p.slug);
+      if (target) {
+        target.session_usage_pct = sessionPct;
+        target.weekly_usage_pct = weeklyPct;
+      }
+    } catch (e) {
+      console.error(e);
+    }
   }
 
   function moveCliSelection(delta: number) {

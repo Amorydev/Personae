@@ -109,10 +109,11 @@ input, .path { -webkit-user-select: text; user-select: text; }
 }
 .side-head {
   height: 52px; flex: none;
-  display: flex; align-items: center; gap: 10px;
+  display: flex; align-items: center; justify-content: center; gap: 10px;
   padding: 0 14px 0 78px; /* room for macOS traffic lights */
   position: relative; z-index: 1;
 }
+.side-head .segmented { flex: none; }
 .brand {
   font-family: var(--serif);
   font-style: italic;
@@ -189,9 +190,10 @@ input, .path { -webkit-user-select: text; user-select: text; }
   pointer-events: none;
 }
 .detail-head {
-  height: 64px; flex: none; z-index: 1;
-  display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 10px;
-  padding: 12px 18px 0;
+  /* Now just a thin drag handle — the Desktop/CLI switch lives in the
+     sidebar's .side-head instead, so the detail pane can use its full
+     height for actual content. */
+  height: 14px; flex: none; z-index: 1;
 }
 .detail-head .newtop { justify-self: end; }
 .theme-switch { justify-self: end; }
