@@ -114,7 +114,6 @@ export async function invoke<T = unknown>(cmd: string, args?: Record<string, unk
       const p = MOCK_CLI.find((m) => m.name === args!.name);
       return (p ? MOCK_LAUNCH_HISTORY[p.slug] ?? [] : []) as T;
     }
-    case "get_cli_usage":
     case "fetch_live_cli_usage": {
       const p = MOCK_CLI.find((m) => m.name === args!.name);
       return (p ? [p.session_usage_pct, p.weekly_usage_pct] : [null, null]) as T;

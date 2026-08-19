@@ -1,9 +1,36 @@
 import { defineStore } from "pinia";
-import { computed, ref, watch } from "vue";
+import { computed, reactive, ref, watch } from "vue";
 import { invoke, nowSecs } from "../lib/tauri";
 import type { CliProfile, ProviderConfig, Workspace } from "../lib/types";
 import { useUiStore } from "./ui";
 import { useTerminalStore } from "./terminal";
+
+// Persisted (survives app restarts) so a transient fetch miss — or an
+// account whose local .claude.json cache doesn't have fresh data on this
+// particular read — falls back to the last real number we've seen instead of
+// the generic plan-tier label, and so the 1h throttle below holds across a
+// restart too.
+const LAST_USAGE_KEY = "personae:lastUsage";
+const LAST_USAGE_FETCH_KEY = "personae:lastUsageFetchAt";
+const USAGE_REFRESH_THROTTLE_MS = 60 * 60 * 1000;
+
+type UsageCache = Record<string, { session: number | null; weekly: number | null }>;
+
+function loadJson<T>(key: string, fallback: T): T {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? (JSON.parse(raw) as T) : fallback;
+  } catch {
+    return fallback;
+  }
+}
+function saveJson(key: string, value: unknown) {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    // best-effort cache — ignore quota/availability errors
+  }
+}
 
 export const useCliStore = defineStore("cli", () => {
   const cliProfiles = ref<CliProfile[]>([]);
@@ -28,10 +55,33 @@ export const useCliStore = defineStore("cli", () => {
     if (items.length && !items.some((p) => p.slug === cliSelected.value)) cliSelected.value = items[0].slug;
   });
 
+  // Covers every way an account becomes "current" — first account
+  // auto-selected on initial load, clicking a different account, or the
+  // filtered-list fallback re-select above — with one live usage refresh,
+  // rather than needing a call at every individual call site that sets
+  // cliSelected. Throttled to once per hour per account (see
+  // refreshUsageLive) so re-selecting the same account repeatedly doesn't
+  // keep hitting Anthropic's endpoint.
+  watch(cliCurrent, (p) => {
+    if (p) refreshUsageLive(p, { silent: true });
+  });
+
   async function reloadCli() {
     try {
       cliAvailable.value = await invoke<boolean>("cli_available");
       cliProfiles.value = await invoke<CliProfile[]>("list_cli_profiles");
+      // Backend list() reads only the CLI's own local cache, which can be
+      // null for reasons unrelated to "no usage data exists" (e.g. right
+      // after the account-dir migration, or before the first live fetch of
+      // this session lands) — fall back to our own persisted last-known
+      // value so the detail pane doesn't flash the generic plan-tier label.
+      const lastUsage = loadJson<UsageCache>(LAST_USAGE_KEY, {});
+      for (const p of cliProfiles.value) {
+        if (p.session_usage_pct == null && p.weekly_usage_pct == null && lastUsage[p.slug]) {
+          p.session_usage_pct = lastUsage[p.slug].session;
+          p.weekly_usage_pct = lastUsage[p.slug].weekly;
+        }
+      }
       cliWorkspaces.value = await invoke<Workspace[]>("list_workspaces");
       if (!cliProfiles.value.some((p) => p.slug === cliSelected.value)) {
         cliSelected.value = cliProfiles.value[0]?.slug ?? null;
@@ -44,44 +94,52 @@ export const useCliStore = defineStore("cli", () => {
   }
 
   const usageRefreshingSlug = ref<string | null>(null); // drives the manual refresh button's spinner
+  // Accounts whose live usage fetch came back 401 (expired/invalid OAuth
+  // token) — CliDetail treats this like a logged-out state (forces the
+  // Relogin prompt) regardless of what the locally-computed token expiry
+  // says, since the server just told us directly. Cleared the moment a live
+  // fetch for that account succeeds again.
+  const sessionExpiredSlugs = reactive(new Set<string>());
 
   function selectCliProfile(p: CliProfile) {
     cliSelected.value = p.slug;
-    refreshUsage(p);
   }
 
-  // Fire-and-forget: re-reads just this account's *cached* /usage numbers
-  // from disk (whatever the claude CLI itself last fetched) and patches them
-  // in reactively. Never awaited by selectCliProfile — selecting an account
-  // should never block on it — and a failure here shouldn't surface as an
-  // error toast for what's just a passive background refresh. This is cheap
-  // (one file read), so it's safe to fire on every select/focus/view-switch.
-  async function refreshUsage(p: CliProfile) {
-    usageRefreshingSlug.value = p.slug;
-    try {
-      const [sessionPct, weeklyPct] = await invoke<[number | null, number | null]>("get_cli_usage", { name: p.name });
-      patchUsage(p.slug, sessionPct, weeklyPct);
-    } catch (e) {
-      console.error(e);
-    } finally {
-      if (usageRefreshingSlug.value === p.slug) usageRefreshingSlug.value = null;
-    }
-  }
-
-  // The manual refresh button: a REAL network call straight to Anthropic's
-  // own usage endpoint (the exact lightweight, non-billed GET `claude` itself
-  // makes — see cli::fetch_live_usage), not just a re-read of what the CLI
-  // last cached. Awaited (drives the button's spinner) and surfaces a toast
-  // on failure, since this is an explicit user action, unlike the passive
-  // refreshUsage above.
-  async function refreshUsageLive(p: CliProfile) {
+  // A REAL network call straight to Anthropic's own usage endpoint (the
+  // exact lightweight, non-billed GET `claude` itself makes — see
+  // cli::fetch_live_usage), not just a re-read of what the CLI last cached.
+  // `silent` (used by the cliCurrent watcher — first account opened, or
+  // switching accounts) swallows generic failures quietly (an expired-token
+  // AUTH_EXPIRED result still surfaces — see below) since that's a passive
+  // background refresh, is throttled to once per hour per account, and skips
+  // an account already flagged as session-expired (nothing would succeed
+  // until they relogin anyway). The manual refresh button passes
+  // silent: false, which shows a toast on any failure and always bypasses
+  // the throttle, since it's an explicit "get me a fresh number now" ask.
+  async function refreshUsageLive(p: CliProfile, opts: { silent: boolean } = { silent: false }) {
     const ui = useUiStore();
+    if (opts.silent) {
+      if (sessionExpiredSlugs.has(p.slug)) return;
+      const lastFetch = loadJson<Record<string, number>>(LAST_USAGE_FETCH_KEY, {});
+      if (Date.now() - (lastFetch[p.slug] ?? 0) < USAGE_REFRESH_THROTTLE_MS) return;
+    }
     usageRefreshingSlug.value = p.slug;
     try {
       const [sessionPct, weeklyPct] = await invoke<[number | null, number | null]>("fetch_live_cli_usage", { name: p.name });
+      sessionExpiredSlugs.delete(p.slug);
       patchUsage(p.slug, sessionPct, weeklyPct);
+      const lastFetch = loadJson<Record<string, number>>(LAST_USAGE_FETCH_KEY, {});
+      lastFetch[p.slug] = Date.now();
+      saveJson(LAST_USAGE_FETCH_KEY, lastFetch);
     } catch (e) {
-      ui.showToast(String(e), "error");
+      if (e === "AUTH_EXPIRED") {
+        sessionExpiredSlugs.add(p.slug);
+        ui.showToast(`Session expired for "${p.name}" — please sign in again.`, "error");
+      } else if (opts.silent) {
+        console.error(e);
+      } else {
+        ui.showToast(String(e), "error");
+      }
     } finally {
       if (usageRefreshingSlug.value === p.slug) usageRefreshingSlug.value = null;
     }
@@ -89,9 +147,19 @@ export const useCliStore = defineStore("cli", () => {
 
   function patchUsage(slug: string, sessionPct: number | null, weeklyPct: number | null) {
     const target = cliProfiles.value.find((x) => x.slug === slug);
-    if (target) {
+    if (!target) return;
+    const cache = loadJson<UsageCache>(LAST_USAGE_KEY, {});
+    if (sessionPct != null || weeklyPct != null) {
+      cache[slug] = { session: sessionPct, weekly: weeklyPct };
+      saveJson(LAST_USAGE_KEY, cache);
       target.session_usage_pct = sessionPct;
       target.weekly_usage_pct = weeklyPct;
+    } else {
+      // Nothing new this time — keep showing the last real number we saw,
+      // rather than blanking out to the generic plan-tier label.
+      const last = cache[slug];
+      target.session_usage_pct = last?.session ?? null;
+      target.weekly_usage_pct = last?.weekly ?? null;
     }
   }
 
@@ -217,9 +285,9 @@ export const useCliStore = defineStore("cli", () => {
   }
 
   return {
-    cliProfiles, cliSelected, cliQuery, cliAvailable, cliWorkspaces, pendingLaunch, initialized, usageRefreshingSlug,
+    cliProfiles, cliSelected, cliQuery, cliAvailable, cliWorkspaces, pendingLaunch, initialized, usageRefreshingSlug, sessionExpiredSlugs,
     filteredCli, cliCurrent, workspacesFor,
     reloadCli, selectCliProfile, moveCliSelection, doCliLogin, doCliLaunch, doCliLaunchAt, getLaunchHistory, resumePendingLaunch, doCliCreate, doCliDelete,
-    deleteWorkspace, openWorkspace, openInIde, getProviderConfig, setProviderConfig, refreshUsage, refreshUsageLive,
+    deleteWorkspace, openWorkspace, openInIde, getProviderConfig, setProviderConfig, refreshUsageLive,
   };
 });

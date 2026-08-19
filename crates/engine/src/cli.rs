@@ -154,18 +154,6 @@ fn resolve_config_dir(slug: &str) -> PathBuf { imp_win::config_dir(slug) }
 #[cfg(not(any(target_os = "macos", windows)))]
 fn resolve_config_dir(slug: &str) -> PathBuf { config_root().join(slug) }
 
-/// Fresh usage percentages for one account, re-read from disk on demand —
-/// used to refresh just-selected/just-launched accounts without waiting for
-/// (or paying the cost of) a full `list()` pass over every account.
-pub fn get_usage(name: &str) -> (Option<u32>, Option<u32>) {
-    let slug = crate::platform::slugify(name);
-    let dir = resolve_config_dir(&slug);
-    std::fs::read_to_string(dir.join(".claude.json")).ok()
-        .as_deref()
-        .map(extract_usage_utilization)
-        .unwrap_or((None, None))
-}
-
 pub fn get_provider_config(name: &str) -> Result<ProviderConfig, String> {
     let slug = crate::platform::slugify(name);
     let dir = resolve_config_dir(&slug);
@@ -314,17 +302,34 @@ pub fn fetch_live_usage(name: &str) -> Result<(Option<u32>, Option<u32>), String
     let token = v.get("claudeAiOauth").and_then(|o| o.get("accessToken")).and_then(|t| t.as_str())
         .ok_or("This account has no OAuth access token (API-key accounts have no Claude usage cap).")?;
 
+    // `write-out` appends the HTTP status after the body, marked so it can be
+    // split back off reliably — curl's own exit code only reflects transport
+    // success, not the HTTP status, so without this a 401 (expired token)
+    // would silently fall through to the "unexpected response" branch below
+    // instead of being distinguished as an auth failure.
     let cfg_path = std::env::temp_dir().join(format!("personae-usage-{}-{}.curlcfg", std::process::id(), slug));
     let cfg_body = format!(
-        "silent\nshow-error\nheader = \"Content-Type: application/json\"\nheader = \"Authorization: Bearer {token}\"\nurl = \"https://api.anthropic.com/api/oauth/usage\"\n"
+        "silent\nshow-error\nheader = \"Content-Type: application/json\"\nheader = \"Authorization: Bearer {token}\"\nurl = \"https://api.anthropic.com/api/oauth/usage\"\nwrite-out = \"HTTP_STATUS:%{{http_code}}\"\n"
     );
     std::fs::write(&cfg_path, cfg_body).map_err(|e| e.to_string())?;
     let (ok, out) = crate::platform::run("curl", &["-K", &cfg_path.display().to_string(), "--max-time", "8"]);
     let _ = std::fs::remove_file(&cfg_path);
 
     if !ok { return Err(format!("Usage fetch failed: {}", out.trim())); }
-    let body: serde_json::Value = serde_json::from_str(&out)
-        .map_err(|_| format!("Unexpected response: {}", out.trim().chars().take(200).collect::<String>()))?;
+
+    let (body_str, status) = match out.rsplit_once("HTTP_STATUS:") {
+        Some((b, s)) => (b, s.trim().parse::<u16>().unwrap_or(0)),
+        None => (out.as_str(), 0),
+    };
+    // Sentinel string, not a formatted message: the frontend pattern-matches
+    // this exact value to trigger its "session expired, please sign in
+    // again" UI rather than showing it as a raw error toast.
+    if status == 401 { return Err("AUTH_EXPIRED".to_string()); }
+    if status != 0 && status >= 400 {
+        return Err(format!("Usage fetch failed (HTTP {status}): {}", body_str.trim().chars().take(200).collect::<String>()));
+    }
+    let body: serde_json::Value = serde_json::from_str(body_str)
+        .map_err(|_| format!("Unexpected response: {}", body_str.trim().chars().take(200).collect::<String>()))?;
     Ok(parse_utilization_percentages(Some(&body)))
 }
 

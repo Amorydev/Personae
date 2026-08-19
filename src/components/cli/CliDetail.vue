@@ -23,11 +23,18 @@ const expiryColumnValue = computed(() => {
   if (!e) return "";
   return e.label.replace(/^Signed in until /, "").replace(/^Session /, "");
 });
+// A live 401 from the usage endpoint (see cli::fetch_live_usage) means
+// Anthropic just told us directly the stored token is dead — treat that the
+// same as "not logged in" here even though the on-disk credential file is
+// still present, rather than waiting for the next full reloadCli() to notice.
+const sessionExpired = computed(() => !!cliCurrent.value && cli.sessionExpiredSlugs.has(cliCurrent.value.slug));
+const effectivelyLoggedIn = computed(() => !!cliCurrent.value?.logged_in && !sessionExpired.value);
+
 // One status pill, not two redundant "you're signed in" badges — expiry gets
 // its own metrics column instead (see cli-metrics below).
 const statusPill = computed(() => ({
-  label: cliCurrent.value?.logged_in ? "Signed in" : "Needs login",
-  warn: !cliCurrent.value?.logged_in,
+  label: sessionExpired.value ? "Session expired" : effectivelyLoggedIn.value ? "Signed in" : "Needs login",
+  warn: !effectivelyLoggedIn.value,
 }));
 
 function reveal() {
@@ -69,19 +76,19 @@ function openIde() {
         </div>
       </div>
       <div class="cli-hero-actions">
-        <template v-if="cliCurrent.logged_in">
+        <template v-if="effectivelyLoggedIn">
           <button v-if="expiry?.warn" class="btn" @click="cli.doCliLogin">Relogin</button>
           <button class="primary" @click="cli.doCliLaunch(cliCurrent)"><span aria-hidden="true">↗</span> Launch CLI</button>
           <button class="btn" @click="openIde">Open project…</button>
         </template>
         <template v-else>
-          <button class="primary" @click="cli.doCliLogin">Log in account</button>
+          <button class="primary" @click="cli.doCliLogin">{{ sessionExpired ? "Sign in again" : "Log in account" }}</button>
           <button class="btn" disabled title="Log in first">Launch CLI</button>
         </template>
       </div>
     </section>
     <section v-if="cliCurrent.logged_in" class="cli-metrics" aria-label="Account overview">
-      <div><span>Status</span><strong class="metric-with-dot"><span class="account-status-dot" :class="cliCurrent.logged_in ? 'is-ok' : 'is-idle'" aria-hidden="true"></span>{{ statusPill.label }}</strong></div>
+      <div><span>Status</span><strong class="metric-with-dot"><span class="account-status-dot" :class="effectivelyLoggedIn ? 'is-ok' : 'is-idle'" aria-hidden="true"></span>{{ statusPill.label }}</strong></div>
       <div><span>Storage</span><strong>{{ prettySize(cliCurrent.data_size) }}</strong></div>
       <div><span>Last active</span><strong>{{ relTime(cliCurrent.last_active) }}</strong></div>
       <div><span>Created</span><strong>{{ createdLabel(cliCurrent.created) }}</strong></div>
