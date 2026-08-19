@@ -201,10 +201,11 @@
   .win .act { display: flex; align-items: center; gap: 9px; margin-left: auto; flex: none; flex-wrap: wrap; }
   .win .launch { background: var(--wc); color: #04110f; border-radius: 9px; padding: 9px 14px; font-weight: 650; font-size: 12.5px; box-shadow: inset 0 1px 0 rgba(255,255,255,.25); white-space: nowrap; }
   .win .ghost { background: var(--ink-3); border: 1px solid var(--line); border-radius: 9px; padding: 9px 14px; font-weight: 500; font-size: 12.5px; color: var(--paper); white-space: nowrap; }
-  .win .stats { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 10px; margin-top: 20px; }
-  .win .stat { background: var(--ink-2); border: 1px solid var(--line-soft); border-radius: 12px; padding: 12px 13px; min-width: 0; }
-  .win .stat .k { font-size: 8.5px; letter-spacing: .07em; text-transform: uppercase; color: var(--faint); font-weight: 700; }
-  .win .stat .v { font-size: 15px; font-weight: 600; margin-top: 7px; }
+  .win .stats { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 1px; margin-top: 16px;
+                overflow: hidden; border: 1px solid var(--line-soft); border-radius: 14px; background: var(--line-soft); }
+  .win .stat { background: var(--ink-2); padding: 11px 13px; min-width: 0; }
+  .win .stat .k { font-size: 8.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--faint); font-weight: 650; }
+  .win .stat .v { font-size: 13px; font-weight: 600; margin-top: 6px; }
   .win .wsx { margin-top: 22px; }
   .win .wsx .wt { font-size: 13.5px; font-weight: 700; letter-spacing: .01em; }
   .win .wsx .wsub { font-size: 11px; color: var(--faint); margin-top: 3px; }
