@@ -15,7 +15,7 @@
 
 Claude only lets you be signed into one account at a time: the Desktop app keeps a single login (and a single-instance lock), and the Claude Code CLI holds one login at a time too. Juggling Work, Personal, and client accounts means logging out and back in all day long. Personae keeps them all signed in side by side.
 
-It's a tiny (~3 MB) native app built with [Tauri](https://tauri.app/) (Rust backend, vanilla HTML/CSS/JS frontend). It doesn't repackage Claude — it *wraps* the Claude you already have installed, so it keeps working after every Claude auto-update. Everything runs locally: no account to create, no server, no telemetry.
+It's a tiny (~3 MB) native app built with [Tauri](https://tauri.app/) (Rust backend, Vue 3 + Vite + TypeScript frontend). It doesn't repackage Claude — it *wraps* the Claude you already have installed, so it keeps working after every Claude auto-update. Everything runs locally: no account to create, no server, no telemetry.
 
 > **Website:** https://claudemux.com
 > **Not affiliated with Anthropic** — Personae is an independent companion tool for Claude.
@@ -102,18 +102,18 @@ To build it yourself instead, see [Build from source](#build-from-source).
 
 Prerequisites:
 
-- **Node.js** (LTS) — used to run the Tauri CLI.
+- **Node.js** (LTS) — for the Vite frontend build and the Tauri CLI.
 - **Rust** (stable toolchain, via [rustup](https://rustup.rs/)) — for the backend.
 - Platform toolchain for Tauri — see the [Tauri v2 prerequisites](https://tauri.app/start/prerequisites/) (Xcode Command Line Tools on macOS; Microsoft C++ Build Tools + WebView2 on Windows).
 
-Install dependencies and start the app in dev mode (hot-reloads the frontend, rebuilds the Rust backend on change):
+Install dependencies and start the app in dev mode (Vite hot-reloads the frontend, Rust rebuilds on change):
 
 ```bash
 npm install
 npm run tauri dev
 ```
 
-The frontend is plain HTML/CSS/JS in [`src/`](src/) — there is **no bundler or build step** for it. Edit the files and reload.
+The frontend is a [Vue 3](https://vuejs.org/) + [Vite](https://vitejs.dev/) app (TypeScript, Composition API, Pinia) in [`src/`](src/). `npm run build` type-checks with `vue-tsc` and bundles with Vite; `npm run test` runs the [Vitest](https://vitest.dev/) suite.
 
 ---
 
@@ -142,18 +142,20 @@ Artifacts are written to `src-tauri/target/release/bundle/` (`.dmg`/`.app` on ma
 
 ```
 .
-├── src/                     # Frontend (vanilla HTML/CSS/JS — no build step)
+├── src/                     # Frontend — Vue 3 + Vite + TypeScript (Pinia)
+│   ├── main.ts
+│   ├── App.vue
+│   ├── components/          # UI components (cli/, desktop/, shared)
+│   ├── stores/              # Pinia stores
+│   ├── composables/         # Shared composition functions
+│   ├── lib/                 # Tauri IPC bridge, formatting, types
 │   ├── index.html
-│   ├── main.js
 │   └── styles.css
-├── src-tauri/               # Rust backend (Tauri v2)
-│   └── src/
-│       ├── lib.rs           # Tauri command handlers (the app's API surface)
-│       ├── platform.rs      # OS-agnostic Platform trait + shared helpers
-│       ├── macos.rs         # macOS Desktop-profile engine
-│       ├── windows.rs       # Windows Desktop-profile engine
-│       ├── cli.rs           # Claude Code (CLI) profile engine
-│       └── ide.rs           # IDE integration + workspaces
+├── crates/engine/           # personae-engine — business logic (no Tauri dep)
+│   └── src/                 # platform, macos, windows, cli, ide, terminal, browser, desktop_prefs
+├── src-tauri/               # Thin Tauri v2 wrapper crate
+│   └── src/lib.rs           # #[tauri::command] handlers (the app's API surface)
+├── bin/personae.js          # `personae` CLI launcher (npm run deploy)
 ├── landing/                 # Marketing site source (claudemux.com)
 ├── docs/                    # Windows test plan / QA checklist
 └── .github/workflows/       # CI: release build + publish
