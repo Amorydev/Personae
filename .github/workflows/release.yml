@@ -46,8 +46,7 @@ jobs:
           npm run test
 
       - name: Backend tests (cargo)
-        working-directory: src-tauri
-        run: cargo test --locked
+        run: cargo test -p personae-engine --locked
 
       - name: Build app (Tauri)
         uses: tauri-apps/tauri-action@v0
