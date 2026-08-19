@@ -1,0 +1,5 @@
+[workspace]
+# Split so `cargo check`/`cargo test` against personae-engine alone never has
+# to compile tauri/wry — see crates/engine/Cargo.toml's description.
+members = ["src-tauri", "crates/engine"]
+resolver = "2"

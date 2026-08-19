@@ -1,0 +1,11 @@
+[package]
+name = "personae-engine"
+version = "0.1.0"
+description = "Personae's platform-agnostic business logic (Desktop/CLI account engines, IDE, terminal, browser prefs) — deliberately has NO dependency on tauri/wry, so `cargo check`/`cargo test` on this crate alone skips compiling the whole GUI stack."
+edition = "2021"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+png = "0.17"

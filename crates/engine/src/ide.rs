@@ -90,11 +90,12 @@ mod imp {
     use std::path::PathBuf;
 
     // Reuse the CLI account's config-dir root (per-slug dirs live here).
+    // MUST byte-match cli::imp::config_dir.
     pub fn cli_config_dir(slug: &str) -> PathBuf {
-        home().join("Library/Application Support/ClaudeProfilesCLI").join(slug)
+        home().join("Library/Application Support/Personae/CLI").join(slug)
     }
     pub fn workspaces_file() -> PathBuf {
-        home().join("Library/Application Support/ClaudeProfilesCLI/workspaces.json")
+        home().join("Library/Application Support/Personae/CLI/workspaces.json")
     }
 
     /// Candidate VS Code-family IDEs: (id, display, [bundle-relative CLI paths to probe]).
@@ -133,6 +134,9 @@ mod imp {
     }
 
     pub fn load_workspaces() -> Vec<Workspace> {
+        // Defensive: `cli::list()` also runs this, but `list_workspaces` reads
+        // the same migrated root and could be invoked first on startup.
+        crate::cli::migrate_legacy_dirs();
         match fs::read_to_string(workspaces_file()) {
             Ok(s) => serde_json::from_str(&s).unwrap_or_default(),
             Err(_) => vec![],
@@ -161,13 +165,13 @@ mod imp_win {
     fn localappdata() -> PathBuf { PathBuf::from(std::env::var("LOCALAPPDATA").unwrap_or_default()) }
     fn programfiles() -> PathBuf { PathBuf::from(std::env::var("ProgramFiles").unwrap_or_default()) }
 
-    // MUST byte-match cli::imp_win::config_dir: %APPDATA%\ClaudeProfilesCLI\<slug>
+    // MUST byte-match cli::imp_win::config_dir: %APPDATA%\Personae\CLI\<slug>
     pub fn cli_config_dir(slug: &str) -> PathBuf {
-        appdata().join("ClaudeProfilesCLI").join(slug)
+        appdata().join("Personae").join("CLI").join(slug)
     }
-    // %APPDATA%\ClaudeProfilesCLI\workspaces.json
+    // %APPDATA%\Personae\CLI\workspaces.json
     pub fn workspaces_file() -> PathBuf {
-        appdata().join("ClaudeProfilesCLI").join("workspaces.json")
+        appdata().join("Personae").join("CLI").join("workspaces.json")
     }
 
     /// Like `crate::platform::run`, but with CREATE_NO_WINDOW so the IDE-discovery
@@ -244,6 +248,9 @@ mod imp_win {
     }
 
     pub fn load_workspaces() -> Vec<Workspace> {
+        // Defensive: `cli::list()` also runs this, but `list_workspaces` reads
+        // the same migrated root and could be invoked first on startup.
+        crate::cli::migrate_legacy_dirs();
         match fs::read_to_string(workspaces_file()) {
             Ok(s) => serde_json::from_str(&s).unwrap_or_default(),
             Err(_) => vec![],
@@ -361,7 +368,10 @@ pub fn open_workspace(id: &str, now: u64) -> Result<(), String> {
 pub fn list_ides() -> Vec<Ide> { imp_win::detect_ides() }
 
 /// Native folder picker via PowerShell's WinForms FolderBrowserDialog. Returns
-/// None if the user cancels (the dialog prints nothing on Cancel).
+/// None if the user cancels (the dialog prints nothing on Cancel). Runs under
+/// `pwsh` when available so the dialog is the modern Explorer-style picker,
+/// not Windows PowerShell 5.1's legacy tree view — see
+/// `platform::run_powershell_hidden`'s doc comment.
 #[cfg(windows)]
 pub fn pick_folder() -> Result<Option<String>, String> {
     // -STA is required for WinForms dialogs. The script loads System.Windows.Forms,
@@ -371,8 +381,7 @@ pub fn pick_folder() -> Result<Option<String>, String> {
     let script = "Add-Type -AssemblyName System.Windows.Forms; \
                   $f=New-Object System.Windows.Forms.FolderBrowserDialog; \
                   if($f.ShowDialog() -eq 'OK'){Write-Output $f.SelectedPath}";
-    let (ok, out) = imp_win::run_hidden(
-        "powershell",
+    let (ok, out) = crate::platform::run_powershell_hidden(
         &["-STA", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script],
     );
     // A non-zero exit is a genuine failure — don't let it masquerade as a cancel.

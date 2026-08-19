@@ -17,7 +17,7 @@ use std::path::PathBuf;
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
-static CLAUDE_EXE_CACHE: OnceLock<Option<PathBuf>> = OnceLock::new();
+static CLAUDE_EXE_CACHE: OnceLock<Mutex<Option<PathBuf>>> = OnceLock::new();
 
 // Short-TTL cache for the slow `Get-CimInstance Win32_Process` running-process
 // query (see all_running_commandlines). list() runs on every refresh, so this
@@ -223,11 +223,42 @@ impl Win {
         None
     }
 
-    /// Locate Claude.exe. Cached in memory using OnceLock so subsequent calls take 0ms.
+    /// Locate Claude.exe. A user-set override (see `desktop_prefs`) always wins
+    /// and is re-checked on every call (cheap: one JSON read + one stat) so a
+    /// settings change takes effect immediately, without restarting Personae.
+    ///
+    /// The auto-detected fallback is cached, but the cached path is verified
+    /// live (`is_file()`) before reuse, not blindly memoized forever: an
+    /// MSIX/Store install of Claude Desktop auto-updates in the background
+    /// under a *new, differently-versioned* `InstallLocation`
+    /// (`Claude_<version>_x64_...`) and deletes the old one — confirmed live
+    /// on this machine (Store auto-updated Claude mid-session; the previously
+    /// resolved path then failed with "the system cannot find the file").
+    /// Classic Squirrel installs dodge this via an unversioned `Claude.exe`
+    /// stub (see `exe_in_root`); MSIX InstallLocation has no such stub, so
+    /// staleness has to be caught here instead. Re-resolving is cheap in the
+    /// common case (one `is_file()` stat) and only pays the full multi-probe
+    /// resolution again right after such an update.
     fn claude_exe(&self) -> Option<PathBuf> {
-        CLAUDE_EXE_CACHE
-            .get_or_init(|| self.resolve_claude_exe())
-            .clone()
+        if let Some(p) = crate::desktop_prefs::get_custom_exe() {
+            let pb = PathBuf::from(p);
+            if pb.is_file() {
+                return Some(pb);
+            }
+        }
+        let cache = CLAUDE_EXE_CACHE.get_or_init(|| Mutex::new(None));
+        if let Ok(guard) = cache.lock() {
+            if let Some(p) = guard.as_ref() {
+                if p.is_file() {
+                    return Some(p.clone());
+                }
+            }
+        }
+        let resolved = self.resolve_claude_exe();
+        if let Ok(mut guard) = cache.lock() {
+            *guard = resolved.clone();
+        }
+        resolved
     }
 
     fn resolve_claude_exe(&self) -> Option<PathBuf> {
@@ -244,15 +275,20 @@ impl Win {
         if let Some(exe) = Self::claude_from_running_process() {
             return Some(exe);
         }
-        if let Some(exe) = Self::claude_from_appx() {
-            return Some(exe);
-        }
         for root in self.candidate_roots() {
             if let Some(exe) = Self::exe_in_root(&root) {
                 return Some(exe);
             }
         }
-        Self::claude_from_registry()
+        if let Some(exe) = Self::claude_from_registry() {
+            return Some(exe);
+        }
+        // Last resort: the AppX/MSIX InstallLocation — confirmed live (see
+        // `claude_exe`'s doc comment) that this DOES launch fine directly, so
+        // this is ranked last only because it's the one signal guaranteed to
+        // go stale on its own (Store auto-update), not because it's
+        // unreliable to execute.
+        Self::claude_from_appx()
     }
 
     /// Write the two PS helpers next to the profiles; return their paths.
@@ -465,6 +501,23 @@ impl Platform for Win {
                 .filter(|s| !s.is_empty())
                 .unwrap_or_else(|| slug.clone());
             let data_dir = self.data_root().join(&slug);
+            // Self-heal: `write_launcher` bakes the resolved claude.exe path into
+            // this `.cmd` at create() time. An MSIX/Store install can auto-update
+            // out from under an *already-written* launcher just as easily as it
+            // can go stale in the in-memory cache (see `claude_exe`'s doc comment)
+            // — rewriting the cache doesn't fix a launcher written before the
+            // update. Rewrite it here too, on every list(), same self-heal spirit
+            // as the CLI launchers already use. Cheap: skip the write when the
+            // current exe path is already present in the file.
+            if let Some(exe) = self.claude_exe() {
+                let exe_str = exe.display().to_string();
+                let needs_rewrite = fs::read_to_string(&p)
+                    .map(|body| !body.contains(&exe_str))
+                    .unwrap_or(true);
+                if needs_rewrite {
+                    let _ = self.write_launcher(&slug, &data_dir, &exe);
+                }
+            }
             let dd_lower = data_dir.display().to_string().to_lowercase();
             let running = running_cmds.iter().any(|cmd| cmd.to_lowercase().contains(&dd_lower));
             let tint = fs::read_to_string(self.tint_file(&slug))
@@ -495,16 +548,27 @@ impl Platform for Win {
         if !cmd.exists() {
             return Err(format!("No such profile: {name}"));
         }
-        // Prefer the .lnk (carries the AUMID + icon); fall back to the raw .cmd.
-        let lnk = self.lnk_path(name);
-        let target = if lnk.exists() { lnk } else { cmd };
-        let (ok, e) = run("cmd", &["/C", "start", "", &target.display().to_string()]);
-        if ok {
+        // spawn_detached_in, not run: Claude Desktop is a long-lived process that
+        // would otherwise hang `run`'s Command::output() indefinitely — see that
+        // helper's doc comment (confirmed live: this exact call hung 60+s before
+        // the fix, launching a real Claude Desktop instance).
+        //
+        // Target the `.cmd` directly (NOT the `.lnk`) with `start /B`: the `.lnk`'s
+        // WindowStyle is "minimized" (7), which still allocates a real, visible-if-
+        // briefly console for the `.cmd` batch script that runs inside it — and
+        // whatever Claude Desktop happens to write to its (inherited) stdout, e.g.
+        // a stray Node warning from Electron's own internals, lands in that
+        // console. `/B` runs the command with no new console at all, inheriting the
+        // caller's — which itself has none (CREATE_NO_WINDOW below) — so nothing
+        // is ever shown regardless of what Claude Desktop prints. The `.lnk` still
+        // exists for the Start Menu (AUMID/icon/taskbar grouping); this only
+        // changes how Personae's own "Launch" button starts it.
+        let home = std::env::var("USERPROFILE").map(PathBuf::from).unwrap_or_else(|_| PathBuf::from("C:\\"));
+        let result = spawn_detached_in("cmd", &["/C", "start", "/B", "", &cmd.display().to_string()], &home);
+        if result.is_ok() {
             invalidate_running_cache(); // new process — force a fresh running check
-            Ok(())
-        } else {
-            Err(e)
         }
+        result
     }
 
     fn quit(&self, name: &str) -> Result<(), String> {
