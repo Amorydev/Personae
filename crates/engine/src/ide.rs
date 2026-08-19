@@ -30,6 +30,22 @@ pub fn workspace_id(ide_id: &str, account_slug: &str, project_path: &str) -> Str
     format!("{ide_id}\u{1}{account_slug}\u{1}{project_path}")
 }
 
+const MAX_WORKSPACES_PER_ACCOUNT: usize = 10;
+
+/// Keep at most `MAX_WORKSPACES_PER_ACCOUNT` entries for one account, evicting
+/// the least-recently-opened first — mirrors `cli.rs`'s `LAUNCH_HISTORY_CAP`
+/// pattern for the launch-location picker. Other accounts' entries are
+/// untouched (an account with many projects shouldn't crowd out another's).
+fn cap_workspaces_per_account(list: Vec<Workspace>, account_slug: &str) -> Vec<Workspace> {
+    let (mut mine, mut out): (Vec<_>, Vec<_>) = list.into_iter().partition(|w| w.account_slug == account_slug);
+    if mine.len() > MAX_WORKSPACES_PER_ACCOUNT {
+        mine.sort_by(|a, b| b.last_opened.cmp(&a.last_opened));
+        mine.truncate(MAX_WORKSPACES_PER_ACCOUNT);
+    }
+    out.extend(mine);
+    out
+}
+
 /// Merge `<env_key>.CLAUDE_CONFIG_DIR = <config_dir>` into an existing
 /// `.vscode/settings.json`, preserving other keys. VS Code keys the
 /// integrated-terminal env block by OS, so `env_key` is the platform-specific
@@ -340,7 +356,7 @@ pub fn save_workspace(account_slug: &str, account_name: &str, ide_id: &str, ide_
             created: Some(now), last_opened: Some(now),
         });
     }
-    imp::save_workspaces(&list)
+    imp::save_workspaces(&cap_workspaces_per_account(list, account_slug))
 }
 
 #[cfg(target_os = "macos")]
@@ -471,7 +487,7 @@ pub fn save_workspace(account_slug: &str, account_name: &str, ide_id: &str, ide_
             created: Some(now), last_opened: Some(now),
         });
     }
-    imp_win::save_workspaces(&list)
+    imp_win::save_workspaces(&cap_workspaces_per_account(list, account_slug))
 }
 
 #[cfg(windows)]
@@ -519,6 +535,36 @@ pub fn open_workspace(_id: &str, _n: u64) -> Result<(), String> { Err(NOT_YET.in
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn ws(account: &str, path: &str, last_opened: u64) -> Workspace {
+        Workspace {
+            id: workspace_id("terminal", account, path),
+            account_slug: account.into(), account_name: account.into(),
+            ide_id: "terminal".into(), ide_name: "Terminal".into(), project_path: path.into(),
+            created: Some(last_opened), last_opened: Some(last_opened),
+        }
+    }
+
+    #[test]
+    fn cap_workspaces_per_account_evicts_oldest_only_for_that_account() {
+        let mut list: Vec<Workspace> = (0..12).map(|i| ws("work", &format!("/p{i}"), i)).collect();
+        list.push(ws("other", "/only-one", 999)); // a different account, must survive untouched
+        let capped = cap_workspaces_per_account(list, "work");
+
+        let work: Vec<_> = capped.iter().filter(|w| w.account_slug == "work").collect();
+        assert_eq!(work.len(), 10);
+        // Kept the 10 most-recently-opened (last_opened 2..=11), dropped 0 and 1.
+        assert!(work.iter().all(|w| w.last_opened.unwrap() >= 2));
+
+        assert!(capped.iter().any(|w| w.account_slug == "other" && w.project_path == "/only-one"));
+    }
+
+    #[test]
+    fn cap_workspaces_per_account_is_noop_under_the_limit() {
+        let list: Vec<Workspace> = (0..3).map(|i| ws("work", &format!("/p{i}"), i)).collect();
+        let capped = cap_workspaces_per_account(list, "work");
+        assert_eq!(capped.len(), 3);
+    }
 
     #[test]
     fn merge_into_empty_creates_keys() {

@@ -46,5 +46,8 @@ function remove(id: string, e: MouseEvent) {
       </button>
       <button class="workspace-remove" title="Remove this workspace" :aria-label="`Remove ${folderName(w.project_path)}`" @click="remove(w.id, $event)">×</button>
     </div>
+    <button v-if="loggedIn" class="workspace-add-row" @click="$emit('open-project')">
+      <span aria-hidden="true">◇</span> Open project…
+    </button>
   </div>
 </template>

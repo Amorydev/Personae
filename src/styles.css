@@ -552,6 +552,12 @@ kbd {
 }
 .workspace-row:hover .workspace-remove, .workspace-remove:focus-visible { opacity: 1; }
 .workspace-remove:hover { background: var(--danger-bg); color: var(--danger-text); }
+.workspace-add-row {
+  display: flex; align-items: center; gap: 8px; padding: 9px 12px;
+  border: 1px dashed var(--border); border-radius: 10px; background: transparent;
+  color: var(--text-dim); font: inherit; font-size: 13px; cursor: pointer;
+}
+.workspace-add-row:hover { color: var(--text); border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); }
 .workspace-empty {
   display: flex; align-items: center; gap: 12px; min-height: 72px; padding: 13px 14px;
   border: 1px dashed var(--border); border-radius: 12px; color: var(--text-dim);
