@@ -5,14 +5,20 @@
  *
  *     node scripts/deploy-app.mjs [--dry-run] [--yes] [--skip-build] [--dmg]
  *
- * Windows builds the NSIS `*-setup.exe` and runs it silently. That installer
- * uninstalls the previous version first, and its install dir is
- * %LOCALAPPDATA%\Personae — which is ALSO where the app keeps its CLI
- * launchers (crates/engine/src/cli.rs:628). Those launchers *are* the account
- * registry: cli.rs:1184 discovers accounts by globbing CLI\apps\*.cmd, so
- * losing them makes every CLI account vanish from the UI even though the
- * credentials themselves survive in %APPDATA%\Personae\CLI. The whole CLI\
- * tree is therefore copied aside before the installer runs and restored after.
+ * Windows builds the NSIS `*-setup.exe` and runs it silently. Its install dir
+ * is %LOCALAPPDATA%\Personae, which is ALSO where the app keeps its CLI
+ * launchers (crates/engine/src/cli.rs:628) — and those launchers *are* the
+ * account registry, since cli.rs:1184 discovers accounts by globbing
+ * CLI\apps\*.cmd. Were they ever removed, every CLI account would vanish from
+ * the UI while the credentials sat untouched in %APPDATA%\Personae\CLI.
+ *
+ * Two upstream details make that safe today: under /S the reinstall page never
+ * runs, so the old uninstaller is never invoked and the install is a plain
+ * overwrite; and the uninstaller's own `RMDir "$INSTDIR"` carries no /r, so it
+ * could not remove a non-empty tree regardless. Neither is a guarantee we own,
+ * so the CLI\ tree is still copied aside and restored around the install.
+ * The flip side of overwriting: files dropped between versions are never
+ * cleaned up, so run uninstall.exe by hand occasionally to clear stale ones.
  *
  * macOS needs no such dance: it replaces /Applications/Personae.app, while
  * launchers live in ~/Applications/Personae/CLI (cli.rs:505) and config in
@@ -20,7 +26,8 @@
  * bundle.
  */
 import { spawnSync } from "node:child_process";
-import { cpSync, existsSync, mkdtempSync, readdirSync, rmSync, statSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { cpSync, existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -117,6 +124,11 @@ function findNewestDir(root, name) {
   return best ? best.path : null;
 }
 
+/** SHA-256 of a file, for proving the installed binary is the built one. */
+function sha256(p) {
+  return createHash("sha256").update(readFileSync(p)).digest("hex");
+}
+
 function countLaunchers(appsDir) {
   if (!existsSync(appsDir)) return 0;
   return readdirSync(appsDir).filter((f) => f.endsWith(".cmd")).length;
@@ -153,6 +165,8 @@ async function deployWindows() {
   const installedExe = join(installDir, regRead("MainBinaryName") || "claude-profiles-tauri.exe");
   const launcherTree = join(installDir, "CLI");
   const appsDir = join(launcherTree, "apps");
+  // Captured before anything runs: it decides the installer flags below.
+  const upgrading = existsSync(installedExe);
 
   step("Plan");
   info("platform     Windows");
@@ -201,12 +215,17 @@ async function deployWindows() {
 
   // Close a running instance, scoped by executable path to the install dir or
   // the build tree — never any other process that happens to share a name.
+  // Ask for a clean exit before handing over to the installer, which under /S
+  // goes straight to TerminateProcess with no WM_CLOSE and no wait — enough to
+  // tear an in-flight write to a profile's JSON. Force is the fallback only.
   const q = (s) => s.replace(/'/g, "''");
   const devExe = join(TARGET, "release", "claude-profiles-tauri.exe");
   const stopCmd = "powershell -NoProfile -Command \""
-    + "Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'claude-profiles-tauri.exe' -and ("
+    + "$ps = @(Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'claude-profiles-tauri.exe' -and ("
     + `$_.ExecutablePath -like '${q(installDir)}\\*' -or $_.ExecutablePath -eq '${q(devExe)}'`
-    + ") } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue; $_.ProcessId }\"";
+    + ") }); "
+    + "foreach ($c in $ps) { $p = Get-Process -Id $c.ProcessId -ErrorAction SilentlyContinue; if ($p) { $null = $p.CloseMainWindow() }; $c.ProcessId }; "
+    + "if ($ps) { Start-Sleep -Milliseconds 1500; foreach ($c in $ps) { Stop-Process -Id $c.ProcessId -Force -ErrorAction SilentlyContinue } }\"";
   if (DRY_RUN) {
     step("Would close any running Personae inside the install dir");
   } else {
@@ -222,9 +241,19 @@ async function deployWindows() {
     return;
   }
 
-  step("Installing (silent)");
-  // No /D= — the NSIS installer reuses the recorded install dir on upgrade.
-  const code = run(`"${setup}" /S`, { allowFail: true });
+  // /UPDATE on an upgrade skips the WebView2 bootstrapper section, which shells
+  // out to Microsoft's installer and needs elevation — under /S its UAC prompt
+  // is the only UI and blocks forever. A first install uses plain /S so that
+  // shortcuts still get created (/UPDATE suppresses them).
+  // Never /D= : the template restores the recorded install dir, and passing /D
+  // would create a second install alongside a non-default one.
+  const flags = upgrading ? "/S /UPDATE" : "/S";
+  // Snapshot the outgoing binary so the summary can say whether it actually
+  // changed; /S overwrites in place without version-checking and still exits 0.
+  const beforeHash = upgrading ? sha256(installedExe) : null;
+  step(`Installing (silent, ${flags})`);
+  const code = run(`"${setup}" ${flags}`, { allowFail: true });
+  // 0 success, 1 user cancel, 2 script abort — the template sets no others.
   if (code !== 0) info(`installer exit code ${code}`);
 
   // Restore whatever the uninstall step removed. Existing files win, so a
@@ -235,15 +264,37 @@ async function deployWindows() {
     info(`${countLaunchers(appsDir)} account(s) present at ${appsDir}`);
   }
 
+  // Neither mtime nor the exit code proves anything here: NSIS's `File`
+  // preserves the source timestamp, so the installed mtime is the BUILD time;
+  // and /S overwrites in place without version-checking, so re-running an old
+  // installer still exits 0.
   step("Verifying");
   if (!existsSync(installedExe)) die(`install finished but ${installedExe} is missing`);
-  const st = statSync(installedExe);
-  const ageMin = (Date.now() - st.mtimeMs) / 60000;
+  const installedSize = statSync(installedExe).size;
   info(installedExe);
-  info(`${(st.size / 1048576).toFixed(1)} MiB, modified ${ageMin < 10 ? "just now" : ageMin.toFixed(0) + " min ago"}`);
+  info(`${(installedSize / 1048576).toFixed(1)} MiB`);
+
+  const want = JSON.parse(readFileSync(join(REPO_ROOT, "src-tauri", "tauri.conf.json"), "utf8")).version;
   const ver = regRead("DisplayVersion");
   if (ver) info(`registered version ${ver}`);
-  if (ageMin > 10) die("the installed binary was not updated — the installer may have failed silently");
+  if (ver && want && ver !== want) die(`registry reports ${ver} but this tree builds ${want}`);
+
+  // Size rather than hash, because the two differ by design: `tauri build`
+  // stamps a 3-byte bundle-type marker ("NSS") into the copy it hands the
+  // installer and leaves "UNK" in the binary at target/release. Same build,
+  // three bytes apart — so a hash compare here false-fails every time, while
+  // size still catches a truncated or half-written install.
+  const builtExe = join(TARGET, "release", "claude-profiles-tauri.exe");
+  if (existsSync(builtExe)) {
+    const builtSize = statSync(builtExe).size;
+    if (builtSize !== installedSize) {
+      die(`installed binary is ${installedSize} bytes but the build is ${builtSize} — the install did not take effect`);
+    }
+    info("size matches the build in src-tauri/target");
+  }
+  if (beforeHash) {
+    info(sha256(installedExe) === beforeHash ? "binary unchanged (already current)" : "binary replaced");
+  }
   console.log("\nDone. The installed Personae now matches this working tree.");
 }
 
@@ -275,15 +326,23 @@ async function deployMacOS() {
     run(`npx tauri build --bundles ${bundles}`);
   }
 
-  // A running app cannot be safely replaced; ask it to quit, then insist.
-  const RUNNING = "pgrep -f '/Personae.app/Contents/MacOS/'";
+  // A running app cannot be safely replaced. Anchor the pattern to the start of
+  // the command line AND to the install path: the executable inside the bundle
+  // is `claude-profiles-tauri` (mainBinaryName is unset, so it falls back to the
+  // cargo bin name) and p_comm truncates at 16 chars, which rules out pgrep -x;
+  // meanwhile an unanchored -f pattern would match this script's own shell
+  // wrapper and the freshly built copy under src-tauri/target.
+  const PAT = `^${dest}/Contents/MacOS/`;
+  const RUNNING = `pgrep -f '${PAT}'`;
   if (DRY_RUN) {
     step("Would quit any running Personae");
   } else if (capture(`${RUNNING} || true`)) {
     step("Quitting running Personae");
-    run(`osascript -e 'quit app "Personae"' || true`, { allowFail: true });
-    run(`for i in 1 2 3 4 5; do ${RUNNING} >/dev/null || break; sleep 1; done`, { allowFail: true });
-    run("pkill -f '/Personae.app/Contents/MacOS/' || true", { allowFail: true });
+    // Address it by bundle id and guard on `is running`; a bare `quit app`
+    // would launch the app rather than close it.
+    run(`osascript -e 'tell application id "com.amoryzenith.personae" to if it is running then quit' >/dev/null 2>&1 || true`, { allowFail: true });
+    run(`for i in $(seq 1 25); do ${RUNNING} >/dev/null 2>&1 || break; sleep 0.2; done`, { allowFail: true });
+    run(`pkill -f '${PAT}' || true`, { allowFail: true });
   }
 
   let source;
@@ -297,8 +356,12 @@ async function deployMacOS() {
     step("Installer");
     info(dmg);
     if (DRY_RUN) { step(`Would mount it and copy Personae.app to ${dest}`); return; }
-    const mnt = capture(`hdiutil attach "${dmg}" -nobrowse -readonly | tail -1 | cut -f3-`);
-    if (!mnt || !existsSync(mnt)) die(`could not mount ${dmg}`);
+    // Mount at a private mountpoint rather than parsing hdiutil's tabular
+    // output or guessing under /Volumes — a volume name containing spaces or
+    // tabs breaks both, and /Volumes collides with an already-mounted copy.
+    const mnt = capture("mktemp -d");
+    if (!mnt) die("could not create a temporary mountpoint");
+    run(`hdiutil attach "${dmg}" -nobrowse -readonly -mountpoint "${mnt}"`);
     mounted = mnt;
     source = join(mnt, "Personae.app");
     if (!existsSync(source)) {
@@ -327,9 +390,24 @@ async function deployMacOS() {
   }
 
   step("Verifying");
-  if (!existsSync(join(dest, "Contents", "MacOS"))) die(`install finished but ${dest} looks incomplete`);
+  // The bundle executable is the cargo bin name, not the product name.
+  const destBin = join(dest, "Contents", "MacOS", "claude-profiles-tauri");
+  if (!existsSync(destBin)) die(`install finished but ${destBin} is missing`);
   const ver = capture(`defaults read "${dest}/Contents/Info.plist" CFBundleShortVersionString`);
   if (ver) info(`installed version ${ver}`);
+  // Size, not mtime: ditto preserves the source mtime, so an unchanged mtime
+  // proves nothing. Hash only informs — on Windows the same comparison differs
+  // by three bytes of bundle-type marker between the build tree and the
+  // installed copy, and that behaviour is unverified here, so a mismatch is
+  // reported rather than treated as failure.
+  const builtApp = findNewestDir(TARGET, "Personae.app");
+  const builtBin = builtApp && join(builtApp, "Contents", "MacOS", "claude-profiles-tauri");
+  if (builtBin && existsSync(builtBin)) {
+    const a = statSync(builtBin).size, b = statSync(destBin).size;
+    if (a !== b) die(`installed binary is ${b} bytes but the build is ${a} — the install did not take effect`);
+    info("size matches the build in src-tauri/target");
+    if (sha256(builtBin) !== sha256(destBin)) info("note: bytes differ from the build (expected if a bundle-type marker is stamped)");
+  }
   info(dest);
   console.log("\nDone. The installed Personae now matches this working tree.");
 }
