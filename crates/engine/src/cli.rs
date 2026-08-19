@@ -828,6 +828,72 @@ pub fn create(name: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// Renames a CLI account. The launcher `.command` file IS the display name
+/// here (no separate name sidecar the way Windows has), and `slug` — which
+/// `config_dir()` and the Keychain-service hash are both derived from — is
+/// recomputed from the name rather than stored, so a rename that changes the
+/// slugified form has to move the config dir *and* the Keychain login entry
+/// to the new hash, or the account would silently appear signed-out
+/// afterward. Validates everything, including reading back the Keychain
+/// entry, before making any filesystem change — a failure at any step
+/// leaves the account exactly as it was, nothing partially renamed.
+///
+/// UNVERIFIED on a real Mac this session (no access to one) — the Keychain
+/// read/re-add specifically (`security ... -w`) needs a real pass before
+/// trusting it against a real login.
+#[cfg(target_os = "macos")]
+pub fn rename(old_name: &str, new_name: &str) -> Result<(), String> {
+    use crate::platform::slugify;
+    let old_slug = slugify(old_name);
+    let old_lp = imp::launcher_path(old_name);
+    if !old_lp.exists() { return Err(format!("No such CLI account: {old_name}")); }
+
+    let new_name = new_name.trim();
+    let new_slug = slugify(new_name);
+    if new_slug.is_empty() { return Err("Name must contain letters or numbers.".into()); }
+    let new_lp = imp::launcher_path(new_name);
+    if new_lp != old_lp && new_lp.exists() {
+        return Err(format!("CLI account already exists: {new_name}"));
+    }
+
+    if new_slug != old_slug {
+        let old_cfg = imp::config_dir(&old_slug);
+        let new_cfg = imp::config_dir(&new_slug);
+        if new_cfg.exists() {
+            return Err(format!("An account already uses the internal id \"{new_slug}\" — pick a more distinct name."));
+        }
+
+        // Keychain has no "rename service" primitive for generic passwords —
+        // read the secret back and re-add it under the new hash, then drop
+        // the old entry. Bail before touching anything on disk if this step
+        // can't be completed cleanly.
+        let old_svc = imp::login_keychain_service(&old_slug);
+        let new_svc = imp::login_keychain_service(&new_slug);
+        let user = std::env::var("USER").unwrap_or_default();
+        if crate::platform::run("security", &["find-generic-password", "-s", &old_svc, "-a", &user]).0 {
+            let (read_ok, pw) = crate::platform::run("security", &["find-generic-password", "-s", &old_svc, "-a", &user, "-w"]);
+            let pw = pw.trim().to_string();
+            if !read_ok || pw.is_empty() {
+                return Err("Could not read this account's saved login to move it — rename aborted, nothing was changed.".into());
+            }
+            let (added, _) = crate::platform::run("security", &["add-generic-password", "-s", &new_svc, "-a", &user, "-w", &pw]);
+            if !added {
+                return Err("Could not move this account's saved login to the new name — rename aborted, nothing was changed.".into());
+            }
+            let _ = crate::platform::run("security", &["delete-generic-password", "-s", &old_svc, "-a", &user]);
+        }
+
+        if old_cfg.exists() {
+            std::fs::rename(&old_cfg, &new_cfg).map_err(|e| e.to_string())?;
+        }
+    }
+
+    if old_lp != new_lp {
+        let _ = std::fs::remove_file(&old_lp);
+    }
+    imp::write_launcher(new_name, &new_slug)
+}
+
 /// Open a Terminal in this profile's config dir running `claude auth login` — the
 /// one-time real sign-in. The credential is stored in this profile's own
 /// Keychain slot (namespaced by config dir), isolated from other profiles.
@@ -951,6 +1017,24 @@ pub fn create(name: &str) -> Result<(), String> {
     std::fs::create_dir_all(imp_win::config_dir(&slug)).map_err(|e| e.to_string())?;
     imp_win::write_launcher(name, &slug)?;
     Ok(())
+}
+
+/// Rename only the *display* name — `slug`/`config_dir` (and everything
+/// keyed by it: credentials, launch history, workspace bindings) are
+/// untouched, since Windows already decouples them: the `.name` sidecar next
+/// to the launcher is the only place the display name lives, independent of
+/// the slug-named `.cmd`/config dir. Regenerates the launcher (`.cmd` +
+/// `.name`) via `write_launcher` so the new name is reflected in the
+/// console-title/banner lines it bakes in (see `render_launcher_win`), not
+/// just the sidecar file.
+#[cfg(windows)]
+pub fn rename(old_name: &str, new_name: &str) -> Result<(), String> {
+    use crate::platform::slugify;
+    let slug = slugify(old_name);
+    if !imp_win::launcher_path(&slug).exists() { return Err(format!("No such CLI account: {old_name}")); }
+    let new_name = new_name.trim();
+    if new_name.is_empty() { return Err("Name must contain letters or numbers.".into()); }
+    imp_win::write_launcher(new_name, &slug)
 }
 
 /// A console launched via `cmd /C start ...` otherwise inherits Personae's own
@@ -1120,6 +1204,8 @@ pub fn available() -> bool { false }
 pub fn list() -> Vec<CliProfile> { vec![] }
 #[cfg(not(any(target_os = "macos", windows)))]
 pub fn create(_name: &str) -> Result<(), String> { Err(NOT_YET.into()) }
+#[cfg(not(any(target_os = "macos", windows)))]
+pub fn rename(_old_name: &str, _new_name: &str) -> Result<(), String> { Err(NOT_YET.into()) }
 #[cfg(not(any(target_os = "macos", windows)))]
 pub fn login(_name: &str) -> Result<(), String> { Err(NOT_YET.into()) }
 #[cfg(not(any(target_os = "macos", windows)))]

@@ -93,6 +93,15 @@ export async function invoke<T = unknown>(cmd: string, args?: Record<string, unk
         subscription_type: null, rate_limit_tier: null, session_usage_pct: null, weekly_usage_pct: null });
       return undefined as T;
     }
+    case "rename_cli_profile": {
+      const oldName = args!.oldName as string;
+      const newName = (args!.newName as string).trim();
+      const p = MOCK_CLI.find((m) => m.name === oldName);
+      if (!p) throw `No such CLI account: ${oldName}`;
+      if (!newName) throw "Name must contain letters or numbers.";
+      p.name = newName;
+      return undefined as T;
+    }
     case "login_cli_profile": console.log("login", args!.name); return undefined as T;
     case "launch_cli_profile": {
       const name = args!.name as string;

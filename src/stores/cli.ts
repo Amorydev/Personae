@@ -249,6 +249,17 @@ export const useCliStore = defineStore("cli", () => {
     await reloadCli();
   }
 
+  // Re-selects by the NEW name after reload rather than assuming the slug is
+  // unchanged: on Windows it always is (slug stays tied to the original
+  // name), but a macOS rename that changes the slugified form moves the
+  // account under a new slug — see cli::rename's doc comment.
+  async function renameCliProfile(oldName: string, newName: string) {
+    await invoke("rename_cli_profile", { oldName, newName });
+    await reloadCli();
+    const renamed = cliProfiles.value.find((p) => p.name === newName);
+    if (renamed) cliSelected.value = renamed.slug;
+  }
+
   async function getProviderConfig(name: string): Promise<ProviderConfig> {
     return invoke<ProviderConfig>("get_cli_provider_config", { name });
   }
@@ -296,7 +307,7 @@ export const useCliStore = defineStore("cli", () => {
   return {
     cliProfiles, cliSelected, cliQuery, cliAvailable, cliWorkspaces, pendingLaunch, initialized, usageRefreshingSlug, sessionExpiredSlugs,
     filteredCli, cliCurrent, workspacesFor,
-    reloadCli, selectCliProfile, moveCliSelection, doCliLogin, doCliLaunch, doCliLaunchAt, getLaunchHistory, resumePendingLaunch, doCliCreate, doCliDelete,
+    reloadCli, selectCliProfile, moveCliSelection, doCliLogin, doCliLaunch, doCliLaunchAt, getLaunchHistory, resumePendingLaunch, doCliCreate, doCliDelete, renameCliProfile,
     deleteWorkspace, openWorkspace, openInIde, getProviderConfig, setProviderConfig, refreshUsageLive,
   };
 });

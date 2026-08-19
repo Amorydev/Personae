@@ -14,6 +14,7 @@ import DesktopSettingsModal from "./components/desktop/DesktopSettingsModal.vue"
 import CliSidebar from "./components/cli/CliSidebar.vue";
 import CliDetail from "./components/cli/CliDetail.vue";
 import CliCreateModal from "./components/cli/CliCreateModal.vue";
+import CliEditModal from "./components/cli/CliEditModal.vue";
 import CliDeleteModal from "./components/cli/CliDeleteModal.vue";
 import IdeModal from "./components/cli/IdeModal.vue";
 import ProviderConfigModal from "./components/cli/ProviderConfigModal.vue";
@@ -35,6 +36,10 @@ const cliAccent = computed(() => (cli.cliCurrent ? cliColor(cli.cliCurrent) : "#
 
 onMounted(() => {
   desktop.reload();
+  // This is a desktop app, not a webpage — the WebView's default
+  // browser-style right-click menu ("Back", "Reload", "Inspect Element", …)
+  // has no place here.
+  window.addEventListener("contextmenu", (e) => e.preventDefault());
   // Throttled (leading-edge): fires on focus (e.g. returning from the Terminal
   // after `claude auth login`, to re-detect it), but coalesces rapid focus/blur
   // cycles so the CLI probes don't re-run more than once per ~800ms.
@@ -76,6 +81,7 @@ onMounted(() => {
   <DeleteProfileModal />
   <DesktopSettingsModal />
   <CliCreateModal />
+  <CliEditModal />
   <CliDeleteModal />
   <IdeModal />
   <ProviderConfigModal />
