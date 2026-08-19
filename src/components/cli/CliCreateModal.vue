@@ -42,7 +42,7 @@ async function submit() {
         : { auth_mode: "oauth", base_url: null, api_key: null, model: null, small_fast_model: null }
     );
   } catch (e) {
-    alert(String(e));
+    ui.showToast(String(e), "error");
     return;
   }
   ui.closeModal("cliCreate");

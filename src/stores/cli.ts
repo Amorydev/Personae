@@ -1,9 +1,36 @@
 import { defineStore } from "pinia";
-import { computed, ref, watch } from "vue";
+import { computed, reactive, ref, watch } from "vue";
 import { invoke, nowSecs } from "../lib/tauri";
 import type { CliProfile, ProviderConfig, Workspace } from "../lib/types";
 import { useUiStore } from "./ui";
 import { useTerminalStore } from "./terminal";
+
+// Persisted (survives app restarts) so a transient fetch miss — or an
+// account whose local .claude.json cache doesn't have fresh data on this
+// particular read — falls back to the last real number we've seen instead of
+// the generic plan-tier label, and so the 1h throttle below holds across a
+// restart too.
+const LAST_USAGE_KEY = "personae:lastUsage";
+const LAST_USAGE_FETCH_KEY = "personae:lastUsageFetchAt";
+const USAGE_REFRESH_THROTTLE_MS = 60 * 60 * 1000;
+
+type UsageCache = Record<string, { session: number | null; weekly: number | null }>;
+
+function loadJson<T>(key: string, fallback: T): T {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? (JSON.parse(raw) as T) : fallback;
+  } catch {
+    return fallback;
+  }
+}
+function saveJson(key: string, value: unknown) {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    // best-effort cache — ignore quota/availability errors
+  }
+}
 
 export const useCliStore = defineStore("cli", () => {
   const cliProfiles = ref<CliProfile[]>([]);
@@ -31,10 +58,42 @@ export const useCliStore = defineStore("cli", () => {
     }
   });
 
+  // Covers every way an account becomes "current" — first account
+  // auto-selected on initial load, clicking a different account, or the
+  // filtered-list fallback re-select above — with one live usage refresh,
+  // rather than needing a call at every individual call site that sets
+  // cliSelected. Throttled to once per hour per account (see
+  // refreshUsageLive) so re-selecting the same account repeatedly doesn't
+  // keep hitting Anthropic's endpoint.
+  //
+  // Watches cliSelected (the plain slug ref), NOT cliCurrent: cliCurrent is a
+  // computed `.find()` into cliProfiles, and reloadCli() replaces that whole
+  // array (fresh object instances) on every call — e.g. every throttled
+  // window-focus reload — so cliCurrent's *reference* changes even when the
+  // selected account hasn't. Watching the primitive slug means Vue's own
+  // same-value skip applies, so re-resolving to the same account after a
+  // background reload correctly does NOT refire this.
+  watch(cliSelected, (slug) => {
+    const p = cliProfiles.value.find((x) => x.slug === slug);
+    if (p) refreshUsageLive(p, { silent: true });
+  });
+
   async function reloadCli() {
     try {
       cliAvailable.value = await invoke<boolean>("cli_available");
       cliProfiles.value = await invoke<CliProfile[]>("list_cli_profiles");
+      // Backend list() reads only the CLI's own local cache, which can be
+      // null for reasons unrelated to "no usage data exists" (e.g. right
+      // after the account-dir migration, or before the first live fetch of
+      // this session lands) — fall back to our own persisted last-known
+      // value so the detail pane doesn't flash the generic plan-tier label.
+      const lastUsage = loadJson<UsageCache>(LAST_USAGE_KEY, {});
+      for (const p of cliProfiles.value) {
+        if (p.session_usage_pct == null && p.weekly_usage_pct == null && lastUsage[p.slug]) {
+          p.session_usage_pct = lastUsage[p.slug].session;
+          p.weekly_usage_pct = lastUsage[p.slug].weekly;
+        }
+      }
       cliWorkspaces.value = await invoke<Workspace[]>("list_workspaces");
       if (!cliProfiles.value.some((p) => p.slug === cliSelected.value)) {
         cliSelected.value = cliProfiles.value[0]?.slug ?? null;
@@ -46,25 +105,73 @@ export const useCliStore = defineStore("cli", () => {
     }
   }
 
+  const usageRefreshingSlug = ref<string | null>(null); // drives the manual refresh button's spinner
+  // Accounts whose live usage fetch came back 401 (expired/invalid OAuth
+  // token) — CliDetail treats this like a logged-out state (forces the
+  // Relogin prompt) regardless of what the locally-computed token expiry
+  // says, since the server just told us directly. Cleared the moment a live
+  // fetch for that account succeeds again.
+  const sessionExpiredSlugs = reactive(new Set<string>());
+
   function selectCliProfile(p: CliProfile) {
     cliSelected.value = p.slug;
-    refreshUsage(p);
   }
 
-  // Fire-and-forget: re-reads just this account's cached /usage numbers from
-  // disk and patches them in reactively. Never awaited by callers — selecting
-  // an account should never block on it, and a failure here shouldn't surface
-  // as an error toast for what's just a background refresh.
-  async function refreshUsage(p: CliProfile) {
+  // A REAL network call straight to Anthropic's own usage endpoint (the
+  // exact lightweight, non-billed GET `claude` itself makes — see
+  // cli::fetch_live_usage), not just a re-read of what the CLI last cached.
+  // `silent` (used by the cliCurrent watcher — first account opened, or
+  // switching accounts) swallows generic failures quietly (an expired-token
+  // AUTH_EXPIRED result still surfaces — see below) since that's a passive
+  // background refresh, is throttled to once per hour per account, and skips
+  // an account already flagged as session-expired (nothing would succeed
+  // until they relogin anyway). The manual refresh button passes
+  // silent: false, which shows a toast on any failure and always bypasses
+  // the throttle, since it's an explicit "get me a fresh number now" ask.
+  async function refreshUsageLive(p: CliProfile, opts: { silent: boolean } = { silent: false }) {
+    const ui = useUiStore();
+    if (opts.silent) {
+      if (sessionExpiredSlugs.has(p.slug)) return;
+      const lastFetch = loadJson<Record<string, number>>(LAST_USAGE_FETCH_KEY, {});
+      if (Date.now() - (lastFetch[p.slug] ?? 0) < USAGE_REFRESH_THROTTLE_MS) return;
+    }
+    usageRefreshingSlug.value = p.slug;
     try {
-      const [sessionPct, weeklyPct] = await invoke<[number | null, number | null]>("get_cli_usage", { name: p.name });
-      const target = cliProfiles.value.find((x) => x.slug === p.slug);
-      if (target) {
-        target.session_usage_pct = sessionPct;
-        target.weekly_usage_pct = weeklyPct;
-      }
+      const [sessionPct, weeklyPct] = await invoke<[number | null, number | null]>("fetch_live_cli_usage", { name: p.name });
+      sessionExpiredSlugs.delete(p.slug);
+      patchUsage(p.slug, sessionPct, weeklyPct);
+      const lastFetch = loadJson<Record<string, number>>(LAST_USAGE_FETCH_KEY, {});
+      lastFetch[p.slug] = Date.now();
+      saveJson(LAST_USAGE_FETCH_KEY, lastFetch);
     } catch (e) {
-      console.error(e);
+      if (e === "AUTH_EXPIRED") {
+        sessionExpiredSlugs.add(p.slug);
+        ui.showToast(`Session expired for "${p.name}" — please sign in again.`, "error");
+      } else if (opts.silent) {
+        console.error(e);
+      } else {
+        ui.showToast(String(e), "error");
+      }
+    } finally {
+      if (usageRefreshingSlug.value === p.slug) usageRefreshingSlug.value = null;
+    }
+  }
+
+  function patchUsage(slug: string, sessionPct: number | null, weeklyPct: number | null) {
+    const target = cliProfiles.value.find((x) => x.slug === slug);
+    if (!target) return;
+    const cache = loadJson<UsageCache>(LAST_USAGE_KEY, {});
+    if (sessionPct != null || weeklyPct != null) {
+      cache[slug] = { session: sessionPct, weekly: weeklyPct };
+      saveJson(LAST_USAGE_KEY, cache);
+      target.session_usage_pct = sessionPct;
+      target.weekly_usage_pct = weeklyPct;
+    } else {
+      // Nothing new this time — keep showing the last real number we saw,
+      // rather than blanking out to the generic plan-tier label.
+      const last = cache[slug];
+      target.session_usage_pct = last?.session ?? null;
+      target.weekly_usage_pct = last?.weekly ?? null;
     }
   }
 
@@ -142,8 +249,36 @@ export const useCliStore = defineStore("cli", () => {
   }
 
   async function doCliDelete(name: string) {
-    await invoke("delete_cli_profile", { name, purge: true });
+    try {
+      await invoke("delete_cli_profile", { name, purge: true });
+    } catch (e) {
+      // Backend already doesn't have it (e.g. removed through some other
+      // path while this list was stale) — from the user's perspective it's
+      // gone either way, so this counts as success, not an error to surface.
+      // Drop it from the local list directly rather than only relying on the
+      // reloadCli() below to notice, so it's guaranteed gone immediately.
+      if (typeof e === "string" && e.startsWith("No such CLI account:")) {
+        cliProfiles.value = cliProfiles.value.filter((p) => p.name !== name);
+        if (!cliProfiles.value.some((p) => p.slug === cliSelected.value)) {
+          cliSelected.value = cliProfiles.value[0]?.slug ?? null;
+        }
+      } else {
+        throw e;
+      }
+    } finally {
+      await reloadCli();
+    }
+  }
+
+  // Re-selects by the NEW name after reload rather than assuming the slug is
+  // unchanged: on Windows it always is (slug stays tied to the original
+  // name), but a macOS rename that changes the slugified form moves the
+  // account under a new slug — see cli::rename's doc comment.
+  async function renameCliProfile(oldName: string, newName: string) {
+    await invoke("rename_cli_profile", { oldName, newName });
     await reloadCli();
+    const renamed = cliProfiles.value.find((p) => p.name === newName);
+    if (renamed) cliSelected.value = renamed.slug;
   }
 
   async function getProviderConfig(name: string): Promise<ProviderConfig> {
@@ -191,9 +326,9 @@ export const useCliStore = defineStore("cli", () => {
   }
 
   return {
-    cliProfiles, cliSelected, cliQuery, cliAvailable, cliWorkspaces, pendingLaunch, initialized,
+    cliProfiles, cliSelected, cliQuery, cliAvailable, cliWorkspaces, pendingLaunch, initialized, usageRefreshingSlug, sessionExpiredSlugs,
     filteredCli, cliCurrent, workspacesFor,
-    reloadCli, selectCliProfile, moveCliSelection, doCliLogin, doCliLaunch, doCliLaunchAt, getLaunchHistory, resumePendingLaunch, doCliCreate, doCliDelete,
-    deleteWorkspace, openWorkspace, openInIde, getProviderConfig, setProviderConfig,
+    reloadCli, selectCliProfile, moveCliSelection, doCliLogin, doCliLaunch, doCliLaunchAt, getLaunchHistory, resumePendingLaunch, doCliCreate, doCliDelete, renameCliProfile,
+    deleteWorkspace, openWorkspace, openInIde, getProviderConfig, setProviderConfig, refreshUsageLive,
   };
 });

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { ref } from "vue";
 import { storeToRefs } from "pinia";
 import { useCliStore } from "../../stores/cli";
 import { useUiStore } from "../../stores/ui";
@@ -6,6 +7,7 @@ import { useViewSwitch } from "../../composables/useViewSwitch";
 import { cliColor } from "../../lib/format";
 import type { CliProfile } from "../../lib/types";
 import ThemeSwitch from "../ThemeSwitch.vue";
+import ContextMenu, { type ContextMenuItem } from "../ContextMenu.vue";
 
 const cli = useCliStore();
 const ui = useUiStore();
@@ -16,6 +18,31 @@ function identity(p: CliProfile): string {
   if (!p.logged_in) return "Needs login";
   if (p.auth_mode === "api_key") return p.provider_model || "API key";
   return p.account_email || "Signed in";
+}
+
+const menu = ref<{ x: number; y: number; items: ContextMenuItem[] } | null>(null);
+
+function openAccountMenu(e: MouseEvent, p: CliProfile) {
+  cli.selectCliProfile(p); // select first, so Edit/Delete act on the right account
+  menu.value = {
+    x: e.clientX,
+    y: e.clientY,
+    items: [
+      { label: "Edit", action: () => ui.openModal("cliEdit") },
+      { label: "Delete", action: () => ui.openModal("cliDel") },
+    ],
+  };
+}
+
+function openBlankMenu(e: MouseEvent) {
+  menu.value = {
+    x: e.clientX,
+    y: e.clientY,
+    items: [
+      { label: "New account", action: () => ui.openModal("cliCreate") },
+      { label: "Settings", action: () => ui.openModal("settings") },
+    ],
+  };
 }
 </script>
 
@@ -36,7 +63,7 @@ function identity(p: CliProfile): string {
     <div class="section section-row">
       <span>CLI accounts</span><span class="section-count">{{ cliProfiles.length }}</span>
     </div>
-    <ul id="cli-list" class="profiles" role="listbox" aria-label="CLI accounts">
+    <ul id="cli-list" class="profiles" role="listbox" aria-label="CLI accounts" @contextmenu.prevent="openBlankMenu">
       <li v-if="!initialized" class="list-loading"><span class="spinner" aria-hidden="true"></span> Loading…</li>
       <li v-else-if="!filteredCli.length" class="cli-list-empty">No matching accounts</li>
       <li
@@ -50,6 +77,7 @@ function identity(p: CliProfile): string {
         @click="cli.selectCliProfile(p)"
         @keydown.enter.prevent="cli.selectCliProfile(p)"
         @keydown.space.prevent="cli.selectCliProfile(p)"
+        @contextmenu.prevent.stop="openAccountMenu($event, p)"
       >
         <span class="cli-mark sm" :style="{ '--account-color': cliColor(p) }"><span aria-hidden="true">&gt;_</span></span>
         <span class="cli-account-copy">
@@ -59,12 +87,13 @@ function identity(p: CliProfile): string {
         <span class="account-status-dot" :class="p.logged_in ? 'is-ok' : 'is-warn'" :title="p.logged_in ? 'Signed in' : 'Needs login'" aria-hidden="true"></span>
       </li>
     </ul>
-    <div class="side-foot">
+    <div class="side-foot" @contextmenu.prevent="openBlankMenu">
       <ThemeSwitch class="sidebar-theme-switch" />
       <button class="settings-btn" @click="ui.openModal('settings')">⚙ Settings</button>
       <button id="cli-new-side" class="newbtn" :disabled="!cliAvailable" @click="ui.openModal('cliCreate')">
         <span class="plus">+</span> New account
       </button>
     </div>
+    <ContextMenu v-if="menu" :x="menu.x" :y="menu.y" :items="menu.items" @close="menu = null" />
   </aside>
 </template>

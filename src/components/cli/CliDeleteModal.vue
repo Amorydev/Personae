@@ -12,7 +12,7 @@ async function confirmDelete() {
   try {
     await cli.doCliDelete(p.name);
   } catch (e) {
-    alert(String(e));
+    ui.showToast(String(e), "error");
   }
 }
 </script>

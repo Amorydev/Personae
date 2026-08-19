@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { ref } from "vue";
 import { storeToRefs } from "pinia";
 import { useDesktopStore } from "../../stores/desktop";
 import { useUiStore } from "../../stores/ui";
@@ -6,11 +7,38 @@ import { useViewSwitch } from "../../composables/useViewSwitch";
 import { relTime } from "../../lib/format";
 import Tile from "../Tile.vue";
 import ThemeSwitch from "../ThemeSwitch.vue";
+import ContextMenu, { type ContextMenuItem } from "../ContextMenu.vue";
+import type { DesktopProfile } from "../../lib/types";
 
 const desktop = useDesktopStore();
 const ui = useUiStore();
 const { setView } = useViewSwitch();
 const { profiles, filtered, selected, query, initialized } = storeToRefs(desktop);
+
+const menu = ref<{ x: number; y: number; items: ContextMenuItem[] } | null>(null);
+
+function openProfileMenu(e: MouseEvent, p: DesktopProfile) {
+  desktop.select(p.slug); // select first, so Edit/Delete act on the right profile
+  menu.value = {
+    x: e.clientX,
+    y: e.clientY,
+    items: [
+      { label: "Edit accent", action: () => ui.openModal("edit") },
+      { label: "Delete", action: () => ui.openModal("del") },
+    ],
+  };
+}
+
+function openBlankMenu(e: MouseEvent) {
+  menu.value = {
+    x: e.clientX,
+    y: e.clientY,
+    items: [
+      { label: "New profile", action: () => ui.openModal("create") },
+      { label: "Settings", action: () => ui.openModal("desktopSettings") },
+    ],
+  };
+}
 </script>
 
 <template>
@@ -30,7 +58,7 @@ const { profiles, filtered, selected, query, initialized } = storeToRefs(desktop
     <div class="section section-row">
       <span>Desktop profiles</span><span class="section-count">{{ profiles.length }}</span>
     </div>
-    <ul id="list" class="profiles" role="listbox" aria-label="Desktop profiles">
+    <ul id="list" class="profiles" role="listbox" aria-label="Desktop profiles" @contextmenu.prevent="openBlankMenu">
       <li v-if="!initialized" class="list-loading"><span class="spinner" aria-hidden="true"></span> Loading…</li>
       <li v-else-if="!filtered.length" class="cli-list-empty">No matching profiles</li>
       <li
@@ -45,6 +73,7 @@ const { profiles, filtered, selected, query, initialized } = storeToRefs(desktop
         @click="desktop.select(p.slug)"
         @keydown.enter.prevent="desktop.select(p.slug)"
         @keydown.space.prevent="desktop.select(p.slug)"
+        @contextmenu.prevent.stop="openProfileMenu($event, p)"
       >
         <Tile :tint="p.tint" :running="p.running" size="account" />
         <span class="desktop-profile-copy">
@@ -56,10 +85,11 @@ const { profiles, filtered, selected, query, initialized } = storeToRefs(desktop
         <span class="account-status-dot" :class="p.running ? 'is-ok' : 'is-idle'" aria-hidden="true"></span>
       </li>
     </ul>
-    <div class="side-foot">
+    <div class="side-foot" @contextmenu.prevent="openBlankMenu">
       <ThemeSwitch class="sidebar-theme-switch" />
       <button class="settings-btn" @click="ui.openModal('desktopSettings')">⚙ Settings</button>
       <button class="newbtn" @click="ui.openModal('create')"><span class="plus">+</span> New profile</button>
     </div>
+    <ContextMenu v-if="menu" :x="menu.x" :y="menu.y" :items="menu.items" @close="menu = null" />
   </aside>
 </template>

@@ -154,27 +154,34 @@ fn resolve_config_dir(slug: &str) -> PathBuf { imp_win::config_dir(slug) }
 #[cfg(not(any(target_os = "macos", windows)))]
 fn resolve_config_dir(slug: &str) -> PathBuf { config_root().join(slug) }
 
-/// Fresh usage percentages for one account, re-read from disk on demand —
-/// used to refresh just-selected/just-launched accounts without waiting for
-/// (or paying the cost of) a full `list()` pass over every account.
-pub fn get_usage(name: &str) -> (Option<u32>, Option<u32>) {
-    let slug = crate::platform::slugify(name);
-    let dir = resolve_config_dir(&slug);
-    std::fs::read_to_string(dir.join(".claude.json")).ok()
-        .as_deref()
-        .map(extract_usage_utilization)
-        .unwrap_or((None, None))
-}
+/// Resolves a display *name* to its real slug. NOT just `slugify(name)`: a
+/// renamed account's slug can diverge from its current display name — on
+/// Windows it always does once renamed (`rename` deliberately keeps the slug
+/// fixed to the account's original creation name, so config_dir/credentials
+/// never have to move); on macOS `rename` keeps them in sync by design (moves
+/// config_dir + the Keychain entry when the slug would change), so the naive
+/// form is always correct there. Every lookup-by-name function should go
+/// through this rather than calling `slugify(name)` directly — that bug
+/// meant `delete`/`login`/`launch`/etc. on Windows could never find a
+/// renamed account again, confirmed live: deleting a renamed throwaway
+/// account failed with "No such CLI account" even though it still existed on
+/// disk under its original slug.
+#[cfg(target_os = "macos")]
+pub(crate) fn resolve_slug(name: &str) -> String { crate::platform::slugify(name) }
+#[cfg(windows)]
+pub(crate) fn resolve_slug(name: &str) -> String { imp_win::resolve_slug(name) }
+#[cfg(not(any(target_os = "macos", windows)))]
+pub(crate) fn resolve_slug(name: &str) -> String { crate::platform::slugify(name) }
 
 pub fn get_provider_config(name: &str) -> Result<ProviderConfig, String> {
-    let slug = crate::platform::slugify(name);
+    let slug = resolve_slug(name);
     let dir = resolve_config_dir(&slug);
     if !dir.exists() { return Err(format!("No such CLI account: {name}")); }
     Ok(load_provider_config(&dir))
 }
 
 pub fn set_provider_config(name: &str, cfg: ProviderConfig) -> Result<(), String> {
-    let slug = crate::platform::slugify(name);
+    let slug = resolve_slug(name);
     let dir = resolve_config_dir(&slug);
     if !dir.exists() { return Err(format!("No such CLI account: {name}")); }
     save_provider_config(&dir, &cfg)
@@ -260,7 +267,16 @@ pub fn extract_usage_utilization(json: &str) -> (Option<u32>, Option<u32>) {
         Ok(v) => v,
         Err(_) => return (None, None),
     };
-    let util = v.get("cachedUsageUtilization").and_then(|c| c.get("utilization"));
+    parse_utilization_percentages(v.get("cachedUsageUtilization").and_then(|c| c.get("utilization")))
+}
+
+/// Shared by `extract_usage_utilization` (the CLI's cached copy, nested under
+/// `cachedUsageUtilization.utilization` in `.claude.json`) and
+/// `fetch_live_usage` (the raw response body IS this same "utilization"
+/// shape). `as_f64` + round, not `as_u64`: the CLI's own cache serializes a
+/// whole-number percent bare (`29`), but the live API returns it as an
+/// explicit float (`29.0`) — `as_u64()` would silently miss the latter.
+fn parse_utilization_percentages(util: Option<&serde_json::Value>) -> (Option<u32>, Option<u32>) {
     let session = util
         .and_then(|u| u.get("five_hour"))
         .and_then(|f| f.get("utilization"))
@@ -274,6 +290,66 @@ pub fn extract_usage_utilization(json: &str) -> (Option<u32>, Option<u32>) {
         .and_then(|x| x.as_f64())
         .map(|x| x.round() as u32);
     (session, weekly)
+}
+
+/// Fetch **live** usage straight from Anthropic's own endpoint — the exact
+/// call `claude` itself makes (confirmed by tracing the bundled CLI's own
+/// source this session, then verifying live with a real GET): a lightweight,
+/// read-only status fetch (5s timeout in the CLI's own code), not a billed
+/// completion. Used only for the explicit manual refresh button — the
+/// automatic refreshes (account select, window focus, switching into the CLI
+/// view) stay on the cheap local re-read (`get_usage`) so normal browsing
+/// never silently calls out to this endpoint on every click.
+///
+/// The access token is written to a short-lived curl `-K` config file rather
+/// than passed as a `-H` argument: a process's command-line arguments are
+/// readable by other processes on the machine (e.g. via WMI), which would
+/// expose a live bearer token more broadly than this platform's existing,
+/// already-accepted exposure (the plaintext `.credentials.json` itself — see
+/// `imp_win`'s module doc for why: no Keychain on Windows).
+///
+/// Windows-functional only for now: macOS keeps the OAuth credential in the
+/// Keychain, not a plaintext file, so this reads nothing there and returns a
+/// plain "no stored credentials" error rather than reaching into the
+/// Keychain for a token just to make this one call.
+pub fn fetch_live_usage(name: &str) -> Result<(Option<u32>, Option<u32>), String> {
+    let slug = resolve_slug(name);
+    let dir = resolve_config_dir(&slug);
+    let creds = std::fs::read_to_string(dir.join(".credentials.json"))
+        .map_err(|_| "No stored credentials for this account.".to_string())?;
+    let v: serde_json::Value = serde_json::from_str(&creds).map_err(|e| e.to_string())?;
+    let token = v.get("claudeAiOauth").and_then(|o| o.get("accessToken")).and_then(|t| t.as_str())
+        .ok_or("This account has no OAuth access token (API-key accounts have no Claude usage cap).")?;
+
+    // `write-out` appends the HTTP status after the body, marked so it can be
+    // split back off reliably — curl's own exit code only reflects transport
+    // success, not the HTTP status, so without this a 401 (expired token)
+    // would silently fall through to the "unexpected response" branch below
+    // instead of being distinguished as an auth failure.
+    let cfg_path = std::env::temp_dir().join(format!("personae-usage-{}-{}.curlcfg", std::process::id(), slug));
+    let cfg_body = format!(
+        "silent\nshow-error\nheader = \"Content-Type: application/json\"\nheader = \"Authorization: Bearer {token}\"\nurl = \"https://api.anthropic.com/api/oauth/usage\"\nwrite-out = \"HTTP_STATUS:%{{http_code}}\"\n"
+    );
+    std::fs::write(&cfg_path, cfg_body).map_err(|e| e.to_string())?;
+    let (ok, out) = crate::platform::run("curl", &["-K", &cfg_path.display().to_string(), "--max-time", "8"]);
+    let _ = std::fs::remove_file(&cfg_path);
+
+    if !ok { return Err(format!("Usage fetch failed: {}", out.trim())); }
+
+    let (body_str, status) = match out.rsplit_once("HTTP_STATUS:") {
+        Some((b, s)) => (b, s.trim().parse::<u16>().unwrap_or(0)),
+        None => (out.as_str(), 0),
+    };
+    // Sentinel string, not a formatted message: the frontend pattern-matches
+    // this exact value to trigger its "session expired, please sign in
+    // again" UI rather than showing it as a raw error toast.
+    if status == 401 { return Err("AUTH_EXPIRED".to_string()); }
+    if status != 0 && status >= 400 {
+        return Err(format!("Usage fetch failed (HTTP {status}): {}", body_str.trim().chars().take(200).collect::<String>()));
+    }
+    let body: serde_json::Value = serde_json::from_str(body_str)
+        .map_err(|_| format!("Unexpected response: {}", body_str.trim().chars().take(200).collect::<String>()))?;
+    Ok(parse_utilization_percentages(Some(&body)))
 }
 
 // ---- cross-platform Windows-launcher builders (pure; unit-tested on macOS) --
@@ -548,6 +624,31 @@ mod imp_win {
     pub fn login_path(slug: &str) -> PathBuf { launcher_root().join("_login").join(format!("{slug}.cmd")) }
     pub fn config_dir(slug: &str) -> PathBuf { config_root().join(slug) }
 
+    /// See `super::resolve_slug`'s doc comment for why this exists at all.
+    /// Fast path (an unrenamed account, or before any rename has ever
+    /// happened) is exactly `slugify(name)`; only falls back to scanning
+    /// `.name` sidecars — the only place a renamed account's real slug is
+    /// recorded — when that doesn't resolve to a real launcher.
+    pub fn resolve_slug(name: &str) -> String {
+        let fast = crate::platform::slugify(name);
+        if launcher_path(&fast).exists() { return fast; }
+        if let Ok(rd) = fs::read_dir(launcher_root()) {
+            for e in rd.flatten() {
+                let p = e.path();
+                if p.extension().map_or(false, |x| x == "name") {
+                    if let Ok(stored) = fs::read_to_string(&p) {
+                        if stored.trim() == name {
+                            if let Some(stem) = p.file_stem() {
+                                return stem.to_string_lossy().to_string();
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        fast
+    }
+
     /// One-time move from the legacy `ClaudeProfilesCLI` folder name to
     /// `Personae` — see the macOS `imp::migrate_legacy_dirs` doc comment for
     /// the full rationale (same idempotent, self-heal-on-list pattern). No
@@ -711,7 +812,7 @@ fn push_launch_location(mut list: Vec<String>, path: &str) -> Vec<String> {
 /// most-recent first, capped at 5. Empty (not an error) for an unknown/never-
 /// launched-with-a-folder account.
 pub fn get_launch_history(name: &str) -> Vec<String> {
-    let slug = crate::platform::slugify(name);
+    let slug = resolve_slug(name);
     load_launch_history_at(&launch_history_file()).remove(&slug).unwrap_or_default()
 }
 
@@ -722,6 +823,19 @@ fn record_launch_location(slug: &str, path: &str) {
     let updated = push_launch_location(h.remove(slug).unwrap_or_default(), path);
     h.insert(slug.to_string(), updated);
     let _ = save_launch_history_at(&f, &h);
+}
+
+/// A plain `launch(name, Some(project_path))` (terminal only, no IDE) is a
+/// real project↔account binding too — it was only feeding the launch-history
+/// picker (`record_launch_location`, the "top 5 recent" list) and not the
+/// Workspaces list on the account's own detail page, so a project launched
+/// this way silently didn't show up there. `ide_id: "terminal"` distinguishes
+/// this from a real `open_in_ide`-created binding (`workspace_id` includes
+/// `ide_id`, so the two never collide even for the same account+path).
+fn sync_launch_workspace(slug: &str, name: &str, path: &str) {
+    record_launch_location(slug, path);
+    let now = crate::platform::to_secs(std::time::SystemTime::now()).unwrap_or(0);
+    let _ = crate::ide::save_workspace(slug, name, "terminal", "Terminal", path, now);
 }
 
 /// If this profile has a stored login, ensure its config dir is marked onboarded
@@ -736,7 +850,7 @@ pub fn ensure_onboarded(name: &str) {
 }
 #[cfg(windows)]
 pub fn ensure_onboarded(name: &str) {
-    let slug = crate::platform::slugify(name);
+    let slug = imp_win::resolve_slug(name);
     if imp_win::login_present(&slug) { imp_win::mark_onboarded(&slug); }
 }
 #[cfg(not(any(target_os = "macos", windows)))]
@@ -756,6 +870,72 @@ pub fn create(name: &str) -> Result<(), String> {
     std::fs::create_dir_all(imp::config_dir(&slug)).map_err(|e| e.to_string())?;
     imp::write_launcher(name, &slug)?;
     Ok(())
+}
+
+/// Renames a CLI account. The launcher `.command` file IS the display name
+/// here (no separate name sidecar the way Windows has), and `slug` — which
+/// `config_dir()` and the Keychain-service hash are both derived from — is
+/// recomputed from the name rather than stored, so a rename that changes the
+/// slugified form has to move the config dir *and* the Keychain login entry
+/// to the new hash, or the account would silently appear signed-out
+/// afterward. Validates everything, including reading back the Keychain
+/// entry, before making any filesystem change — a failure at any step
+/// leaves the account exactly as it was, nothing partially renamed.
+///
+/// UNVERIFIED on a real Mac this session (no access to one) — the Keychain
+/// read/re-add specifically (`security ... -w`) needs a real pass before
+/// trusting it against a real login.
+#[cfg(target_os = "macos")]
+pub fn rename(old_name: &str, new_name: &str) -> Result<(), String> {
+    use crate::platform::slugify;
+    let old_slug = slugify(old_name);
+    let old_lp = imp::launcher_path(old_name);
+    if !old_lp.exists() { return Err(format!("No such CLI account: {old_name}")); }
+
+    let new_name = new_name.trim();
+    let new_slug = slugify(new_name);
+    if new_slug.is_empty() { return Err("Name must contain letters or numbers.".into()); }
+    let new_lp = imp::launcher_path(new_name);
+    if new_lp != old_lp && new_lp.exists() {
+        return Err(format!("CLI account already exists: {new_name}"));
+    }
+
+    if new_slug != old_slug {
+        let old_cfg = imp::config_dir(&old_slug);
+        let new_cfg = imp::config_dir(&new_slug);
+        if new_cfg.exists() {
+            return Err(format!("An account already uses the internal id \"{new_slug}\" — pick a more distinct name."));
+        }
+
+        // Keychain has no "rename service" primitive for generic passwords —
+        // read the secret back and re-add it under the new hash, then drop
+        // the old entry. Bail before touching anything on disk if this step
+        // can't be completed cleanly.
+        let old_svc = imp::login_keychain_service(&old_slug);
+        let new_svc = imp::login_keychain_service(&new_slug);
+        let user = std::env::var("USER").unwrap_or_default();
+        if crate::platform::run("security", &["find-generic-password", "-s", &old_svc, "-a", &user]).0 {
+            let (read_ok, pw) = crate::platform::run("security", &["find-generic-password", "-s", &old_svc, "-a", &user, "-w"]);
+            let pw = pw.trim().to_string();
+            if !read_ok || pw.is_empty() {
+                return Err("Could not read this account's saved login to move it — rename aborted, nothing was changed.".into());
+            }
+            let (added, _) = crate::platform::run("security", &["add-generic-password", "-s", &new_svc, "-a", &user, "-w", &pw]);
+            if !added {
+                return Err("Could not move this account's saved login to the new name — rename aborted, nothing was changed.".into());
+            }
+            let _ = crate::platform::run("security", &["delete-generic-password", "-s", &old_svc, "-a", &user]);
+        }
+
+        if old_cfg.exists() {
+            std::fs::rename(&old_cfg, &new_cfg).map_err(|e| e.to_string())?;
+        }
+    }
+
+    if old_lp != new_lp {
+        let _ = std::fs::remove_file(&old_lp);
+    }
+    imp::write_launcher(new_name, &new_slug)
 }
 
 /// Open a Terminal in this profile's config dir running `claude auth login` — the
@@ -792,7 +972,7 @@ pub fn launch(name: &str, project_path: Option<&str>) -> Result<(), String> {
     let (ok, e) = crate::platform::run("open", &[&lp.display().to_string()]);
     if !ok { return Err(e); }
     if let Some(p) = project_path {
-        record_launch_location(&crate::platform::slugify(name), p);
+        sync_launch_workspace(&crate::platform::slugify(name), name, p);
     }
     Ok(())
 }
@@ -883,6 +1063,23 @@ pub fn create(name: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// Rename only the *display* name — `slug`/`config_dir` (and everything
+/// keyed by it: credentials, launch history, workspace bindings) are
+/// untouched, since Windows already decouples them: the `.name` sidecar next
+/// to the launcher is the only place the display name lives, independent of
+/// the slug-named `.cmd`/config dir. Regenerates the launcher (`.cmd` +
+/// `.name`) via `write_launcher` so the new name is reflected in the
+/// console-title/banner lines it bakes in (see `render_launcher_win`), not
+/// just the sidecar file.
+#[cfg(windows)]
+pub fn rename(old_name: &str, new_name: &str) -> Result<(), String> {
+    let slug = imp_win::resolve_slug(old_name);
+    if !imp_win::launcher_path(&slug).exists() { return Err(format!("No such CLI account: {old_name}")); }
+    let new_name = new_name.trim();
+    if new_name.is_empty() { return Err("Name must contain letters or numbers.".into()); }
+    imp_win::write_launcher(new_name, &slug)
+}
+
 /// A console launched via `cmd /C start ...` otherwise inherits Personae's own
 /// process cwd (wherever the app happened to be started from — not somewhere a
 /// user can usefully `cd` around from), so every Windows console this module
@@ -897,8 +1094,7 @@ fn user_home_dir() -> PathBuf {
 /// <config_dir>\.credentials.json (Keychain is absent), isolated per account.
 #[cfg(windows)]
 pub fn login(name: &str) -> Result<(), String> {
-    use crate::platform::slugify;
-    let slug = slugify(name);
+    let slug = imp_win::resolve_slug(name);
     if !imp_win::launcher_path(&slug).exists() { return Err(format!("No such CLI account: {name}")); }
     imp_win::claude_bin().ok_or("Claude Code CLI not found (install `claude`).")?;
     let script = imp_win::write_login_script(name, &slug)?;
@@ -913,8 +1109,7 @@ pub fn login(name: &str) -> Result<(), String> {
 
 #[cfg(windows)]
 pub fn launch(name: &str, project_path: Option<&str>) -> Result<(), String> {
-    use crate::platform::slugify;
-    let slug = slugify(name);
+    let slug = imp_win::resolve_slug(name);
     let lp = imp_win::launcher_path(&slug);
     if !lp.exists() { return Err(format!("No such CLI account: {name}")); }
     ensure_onboarded(name); // skip the first-run menu if already logged in
@@ -962,7 +1157,7 @@ pub fn launch(name: &str, project_path: Option<&str>) -> Result<(), String> {
     };
     if result.is_ok() {
         if let Some(p) = project_path {
-            record_launch_location(&slug, p);
+            sync_launch_workspace(&slug, name, p);
         }
     }
     result
@@ -1025,8 +1220,7 @@ pub fn list() -> Vec<CliProfile> {
 
 #[cfg(windows)]
 pub fn delete(name: &str, purge: bool) -> Result<(), String> {
-    use crate::platform::slugify;
-    let slug = slugify(name);
+    let slug = imp_win::resolve_slug(name);
     let lp = imp_win::launcher_path(&slug);
     if !lp.exists() { return Err(format!("No such CLI account: {name}")); }
     std::fs::remove_file(&lp).map_err(|e| e.to_string())?;
@@ -1050,6 +1244,8 @@ pub fn available() -> bool { false }
 pub fn list() -> Vec<CliProfile> { vec![] }
 #[cfg(not(any(target_os = "macos", windows)))]
 pub fn create(_name: &str) -> Result<(), String> { Err(NOT_YET.into()) }
+#[cfg(not(any(target_os = "macos", windows)))]
+pub fn rename(_old_name: &str, _new_name: &str) -> Result<(), String> { Err(NOT_YET.into()) }
 #[cfg(not(any(target_os = "macos", windows)))]
 pub fn login(_name: &str) -> Result<(), String> { Err(NOT_YET.into()) }
 #[cfg(not(any(target_os = "macos", windows)))]
@@ -1112,6 +1308,21 @@ mod tests {
             {"kind":"weekly_all","percent":7.4}
         ]}}}"#;
         assert_eq!(extract_usage_utilization(jf), (Some(30), Some(7)));
+    }
+
+    #[test]
+    fn parse_utilization_percentages_rounds_live_api_floats() {
+        // Shape verified live: a real GET https://api.anthropic.com/api/oauth/usage
+        // response body IS this "utilization" object directly (no wrapping
+        // cachedUsageUtilization key), and its numbers are explicit floats
+        // (e.g. "2.0"), unlike the CLI's own cache which serializes them bare.
+        let body: serde_json::Value = serde_json::from_str(
+            r#"{"five_hour":{"utilization":2.0},"limits":[
+                {"kind":"weekly_all","group":"weekly","percent":9.0}
+            ]}"#
+        ).unwrap();
+        assert_eq!(parse_utilization_percentages(Some(&body)), (Some(2), Some(9)));
+        assert_eq!(parse_utilization_percentages(None), (None, None));
     }
 
     #[test]

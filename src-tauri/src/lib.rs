@@ -88,6 +88,11 @@ async fn list_cli_profiles() -> Vec<cli::CliProfile> { blocking(cli::list).await
 async fn create_cli_profile(name: String) -> Result<(), String> { blocking(move || cli::create(&name)).await }
 
 #[tauri::command]
+async fn rename_cli_profile(old_name: String, new_name: String) -> Result<(), String> {
+    blocking(move || cli::rename(&old_name, &new_name)).await
+}
+
+#[tauri::command]
 async fn login_cli_profile(name: String) -> Result<(), String> { blocking(move || cli::login(&name)).await }
 
 #[tauri::command]
@@ -99,7 +104,9 @@ async fn launch_cli_profile(name: String, project_path: Option<String>) -> Resul
 async fn get_launch_history(name: String) -> Vec<String> { blocking(move || cli::get_launch_history(&name)).await }
 
 #[tauri::command]
-async fn get_cli_usage(name: String) -> (Option<u32>, Option<u32>) { blocking(move || cli::get_usage(&name)).await }
+async fn fetch_live_cli_usage(name: String) -> Result<(Option<u32>, Option<u32>), String> {
+    blocking(move || cli::fetch_live_usage(&name)).await
+}
 
 #[tauri::command]
 async fn delete_cli_profile(name: String, purge: bool) -> Result<(), String> { blocking(move || cli::delete(&name, purge)).await }
@@ -181,8 +188,8 @@ pub fn run() {
             launch_profile, quit_profile, delete_profile, repair_profiles,
             set_profile_color, get_desktop_exe_override, set_desktop_exe_override, pick_desktop_exe,
             reveal_path, open_url,
-            cli_available, list_cli_profiles, create_cli_profile, login_cli_profile,
-            launch_cli_profile, get_launch_history, get_cli_usage, delete_cli_profile,
+            cli_available, list_cli_profiles, create_cli_profile, rename_cli_profile, login_cli_profile,
+            launch_cli_profile, get_launch_history, fetch_live_cli_usage, delete_cli_profile,
             get_cli_provider_config, set_cli_provider_config,
             list_terminals, get_default_terminal, set_default_terminal,
             get_custom_terminal_path, set_custom_terminal, pick_terminal_exe,
