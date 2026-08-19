@@ -362,7 +362,7 @@ kbd {
 .mini:hover { background: var(--panel); color: var(--warn); }
 
 /* ---------- modal hint text ---------- */
-.modal-card .hint { font-size: 13px; color: var(--text-dim); line-height: 1.5; margin: 0; }
+.modal-card .hint { font-size: 13px; color: var(--text-dim); line-height: 1.5; margin: 0; overflow-wrap: break-word; }
 .modal-card .hint code { background: var(--panel-hover); padding: 1px 5px; border-radius: 4px; font-family: var(--mono); font-size: 12px; }
 .primary:disabled { opacity: .5; cursor: not-allowed; filter: none; }
 

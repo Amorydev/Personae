@@ -22,6 +22,7 @@ import TerminalPickerModal from "./components/cli/TerminalPickerModal.vue";
 import SettingsModal from "./components/cli/SettingsModal.vue";
 import LaunchLocationModal from "./components/cli/LaunchLocationModal.vue";
 import Toast from "./components/Toast.vue";
+import ErrorModal from "./components/ErrorModal.vue";
 import { useThemeStore } from "./stores/theme";
 
 const ui = useUiStore();
@@ -88,5 +89,6 @@ onMounted(() => {
   <TerminalPickerModal />
   <SettingsModal />
   <LaunchLocationModal />
+  <ErrorModal />
   <Toast />
 </template>
