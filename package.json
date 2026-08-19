@@ -21,6 +21,7 @@
     "dev": "tauri dev",
     "dev:web": "vite",
     "build": "vue-tsc --noEmit && vite build",
+    "landing:build": "node landing/build.mjs",
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
