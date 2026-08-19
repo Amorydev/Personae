@@ -216,7 +216,7 @@
               background: linear-gradient(180deg, rgba(255,255,255,.055), transparent); }
   .win .light { width: 11px; height: 11px; border-radius: 50%; }
   .win .r1 { background: #f0655a; } .win .r2 { background: #f4bd4e; } .win .r3 { background: #62c956; }
-  .win .body { display: grid; grid-template-columns: 250px minmax(0,1fr); min-height: 392px; }
+  .win .body { display: grid; grid-template-columns: 250px minmax(0,1fr); min-height: 392px; height: 100%; }
   .win .side { border-right: 1px solid var(--line-soft); padding: 13px 11px; display: flex; flex-direction: column; gap: 3px; background: #0d0c10; }
   .win .search { display: flex; align-items: center; gap: 7px; background: #100f13; border: 1px solid var(--line-soft); border-radius: 8px; padding: 8px 10px; color: var(--faint); }
   .win .search .mag { width: 11px; height: 11px; border: 1.4px solid var(--faint); border-radius: 50%; position: relative; flex: none; }
@@ -270,8 +270,13 @@
   .win .stats { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 1px; margin-top: 16px;
                 overflow: hidden; border: 1px solid var(--line-soft); border-radius: 14px; background: var(--line-soft); }
   .win .stat { background: var(--ink-2); padding: 11px 13px; min-width: 0; }
-  .win .stat .k { font-size: 8.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--faint); font-weight: 650; }
+  .win .stat .k { display: inline-flex; align-items: center; gap: 5px; font-size: 8.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--faint); font-weight: 650; }
   .win .stat .v { font-size: 13px; font-weight: 600; margin-top: 6px; }
+  .win .stat .kbtn { font-size: 8px; font-weight: 650; letter-spacing: .04em; text-transform: none; color: var(--dim);
+                     border: 1px solid var(--line); border-radius: 999px; padding: 1px 5px; }
+  .win .stat .kico { border-radius: 50%; padding: 0; width: 12px; height: 12px; display: grid; place-items: center; }
+  .win .stat .v.vdot::before { content: ""; display: inline-block; width: 7px; height: 7px; border-radius: 50%;
+                               background: var(--ok); box-shadow: 0 0 7px var(--ok); margin-right: 7px; }
   .win .wsx { margin-top: 22px; }
   .win .wsx .wt { font-size: 13.5px; font-weight: 700; letter-spacing: .01em; }
   .win .wsx .wsub { font-size: 11px; color: var(--faint); margin-top: 3px; }
@@ -602,7 +607,14 @@
                   <div class="h2copy"><div class="hrow"><span class="hname">Work CLI</span><span class="pill2 ok">Signed in</span></div><div class="hsub">work@corp.com</div></div>
                   <div class="act"><span class="launch">↗ Launch CLI</span><span class="ghost">Open project…</span></div>
                 </div>
-                <div class="stats"><div class="stat"><div class="k">Storage</div><div class="v">12 MB</div></div><div class="stat"><div class="k">Last active</div><div class="v">5m ago</div></div><div class="stat"><div class="k">Created</div><div class="v">Yesterday</div></div></div>
+                <div class="stats">
+                  <div class="stat"><div class="k">Status</div><div class="v vdot">Signed in</div></div>
+                  <div class="stat"><div class="k">Storage</div><div class="v">12 MB</div></div>
+                  <div class="stat"><div class="k">Last active</div><div class="v">5m ago</div></div>
+                  <div class="stat"><div class="k">Created</div><div class="v">Yesterday</div></div>
+                  <div class="stat"><div class="k">Session expires <span class="kbtn">Relog</span></div><div class="v">in 60 days</div></div>
+                  <div class="stat"><div class="k">Usage <span class="kbtn kico">↻</span></div><div class="v">29% session · 7% week</div></div>
+                </div>
                 <div class="wsx">
                   <div class="wt">Workspaces</div>
                   <div class="wsub">Projects that reopen with this account active.</div>
