@@ -157,7 +157,7 @@ input, .path { -webkit-user-select: text; user-select: text; }
 .p-item.sel { background: var(--panel-hover); color: var(--text); box-shadow: inset 0 0 0 1px var(--border); }
 .p-item .nm { font-size: 14px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-.side-foot { padding: 10px 12px; border-top: 1px solid var(--border-soft); flex: none; }
+.side-foot { padding: 10px 12px; border-top: 1px solid var(--border-soft); flex: none; display: flex; flex-direction: column; gap: 8px; }
 /* workspace rows in the account detail pane (one-click reopen) */
 .ws-row {
   display: flex; align-items: center; gap: 8px;
@@ -203,7 +203,7 @@ input, .path { -webkit-user-select: text; user-select: text; }
 .detail-head .newtop { justify-self: end; }
 .theme-switch { justify-self: end; }
 .theme-switch .seg { padding: 6px 10px; font-size: 12px; }
-.sidebar-theme-switch { display: flex; width: 100%; margin-bottom: 8px; }
+.sidebar-theme-switch { display: flex; width: 100%; }
 .sidebar-theme-switch .seg { flex: 1; }
 .newtop {
   display: inline-flex; align-items: center; gap: 8px;
@@ -715,7 +715,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, summary:focus-v
 .settings-btn {
   width: 100%; display: flex; align-items: center; gap: 8px;
   background: transparent; border: 1px solid var(--border);
-  border-radius: var(--r); padding: 9px 12px; color: var(--text-dim); margin-top: 8px;
+  border-radius: var(--r); padding: 9px 12px; color: var(--text-dim);
   font: inherit; font-size: 13px; cursor: pointer;
 }
 .settings-btn:hover { color: var(--text); background: var(--panel); }
