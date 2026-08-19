@@ -1,0 +1,98 @@
+name: Deploy landing
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'landing/**'
+      - 'scripts/deploy-landing.sh'
+      - '.github/workflows/deploy-landing.yml'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Show what would transfer without changing anything'
+        type: boolean
+        default: false
+      prune:
+        description: 'Also delete remote files no longer in landing/site (never touches dl/)'
+        type: boolean
+        default: false
+
+concurrency:
+  group: deploy-landing
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+
+      - name: Deploy
+        env:
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_PATH: ${{ secrets.VPS_PATH }}
+          VPS_PORT: ${{ secrets.VPS_PORT }}
+          LANDING_PATH_SECRET: ${{ secrets.LANDING_PATH }}
+          DRY_RUN: ${{ inputs.dry_run }}
+          PRUNE: ${{ inputs.prune }}
+        run: |
+          set -euo pipefail
+
+          for name in VPS_SSH_KEY VPS_USER VPS_HOST VPS_PATH; do
+            if [ -z "${!name:-}" ]; then
+              echo "::error::$name is not set. This workflow reuses the secrets release.yml already uses."
+              exit 1
+            fi
+          done
+
+          LANDING_PATH="${LANDING_PATH_SECRET:-}"
+          if [ -z "$LANDING_PATH" ]; then
+            case "${VPS_PATH%/}" in
+              */dl)
+                LANDING_PATH="${VPS_PATH%/}"
+                LANDING_PATH="${LANDING_PATH%/dl}"
+                ;;
+              *)
+                echo "::error::VPS_PATH is the installer directory and the web root is its parent, but VPS_PATH does not end in /dl so it cannot be derived. Add a LANDING_PATH secret holding the web root."
+                exit 1
+                ;;
+            esac
+          fi
+
+          KEY="$RUNNER_TEMP/landing_deploy_key"
+          printf '%s\n' "$VPS_SSH_KEY" | tr -d '\r' > "$KEY"
+          chmod 600 "$KEY"
+          if ! ssh-keygen -y -f "$KEY" >/dev/null 2>&1; then
+            echo "::error::VPS_SSH_KEY is not a valid OpenSSH private key. Paste the whole key, from the BEGIN line to the END line, not the .pub file."
+            exit 1
+          fi
+
+          PORT="${VPS_PORT:-22}"
+          mkdir -p ~/.ssh
+          ssh-keyscan -p "$PORT" -H "$VPS_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          if ! grep -q . ~/.ssh/known_hosts; then
+            echo "::error::could not fetch a host key from $VPS_HOST:$PORT — is the host reachable?"
+            exit 1
+          fi
+
+          ARGS=(--yes)
+          [ "${DRY_RUN:-false}" = "true" ] && ARGS+=(--dry-run)
+          [ "${PRUNE:-false}" = "true" ] && ARGS+=(--prune)
+
+          export LANDING_HOST="$VPS_HOST"
+          export LANDING_USER="$VPS_USER"
+          export LANDING_PATH
+          export LANDING_PORT="$PORT"
+          export LANDING_SSH_KEY="$KEY"
+
+          bash scripts/deploy-landing.sh "${ARGS[@]}"
