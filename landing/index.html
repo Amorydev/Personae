@@ -175,14 +175,15 @@
   .win .cmark.sm { width: 26px; height: 26px; font-size: 11px; }
   .win .cmark.lg { width: 48px; height: 48px; font-size: 19px; border-radius: 24%; }
 
-  .win .main { padding: 15px 20px 20px; position: relative; display: flex; flex-direction: column; min-width: 0; }
+  .win .main { padding: 11px 17px 17px; position: relative; display: flex; flex-direction: column; min-width: 0; }
   .win .main::before { content:""; position:absolute; inset:0 0 auto 0; height:120px;
                        background: radial-gradient(80% 120% at 30% -30%, color-mix(in srgb, var(--wc) 16%, transparent), transparent 60%); pointer-events:none; }
-  .win .segwrap { align-self: center; display: inline-flex; gap: 2px; padding: 3px; background: #100f13; border: 1px solid var(--line-soft); border-radius: 10px; }
-  .win .seg { font-size: 11.5px; font-weight: 600; color: var(--dim); padding: 5px 18px; border-radius: 7px; cursor: pointer; transition: color .2s ease, background .2s ease; }
+  .win .shead { height: 38px; flex: none; display: flex; align-items: center; justify-content: center; }
+  .win .segwrap { display: inline-flex; overflow: hidden; background: #100f13; border: 1px solid var(--line-soft); border-radius: 9px; }
+  .win .seg { font-size: 11.5px; font-weight: 600; color: var(--dim); padding: 5px 14px; cursor: pointer; transition: color .2s ease, background .2s ease; }
   .win .seg:not(.on):hover { color: var(--paper); }
-  .win .seg.on { background: var(--wc); color: #04110f; box-shadow: inset 0 1px 0 rgba(255,255,255,.25); }
-  .win .hero2 { display: flex; align-items: center; gap: 14px; position: relative; margin-top: 18px; flex-wrap: wrap; }
+  .win .seg.on { background: var(--wc); color: #fff; box-shadow: inset 0 1px 0 rgba(255,255,255,.25); }
+  .win .hero2 { display: flex; align-items: center; gap: 14px; position: relative; margin-top: 30px; flex-wrap: wrap; }
   .win .hero2 .cmark { width: 48px; height: 48px; }
   .win .h2copy { min-width: 0; flex: 1 1 200px; }
   .win .hrow { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
@@ -483,6 +484,7 @@
           <div class="view desktop on" data-mode="desktop" aria-hidden="false">
             <div class="body">
               <div class="side">
+                <div class="shead"><div class="segwrap"><span class="seg on" data-go="desktop">Desktop</span><span class="seg" data-go="cli">CLI</span></div></div>
                 <div class="search"><span class="mag"></span> Search profiles…</div>
                 <div class="sect"><span>Desktop profiles</span><span class="ct">4</span></div>
                 <div class="prow sel"><span class="tile" style="background:var(--terra)"><svg><use href="#burst"/></svg></span><span class="pc"><span class="nm">Personal</span><span class="ps">Last active · Just now</span></span><span class="sdot"></span></div>
@@ -492,7 +494,6 @@
                 <div class="newp"><span aria-hidden="true">+</span> New profile</div>
               </div>
               <div class="main">
-                <div class="segwrap"><span class="seg on" data-go="desktop">Desktop</span><span class="seg" data-go="cli">CLI</span></div>
                 <div class="hero2">
                   <span class="tile" style="background:var(--terra)"><svg><use href="#burst"/></svg></span>
                   <div class="h2copy"><div class="hrow"><span class="hname">Personal</span><span class="pill2">Ready</span></div><div class="hsub">Last active Just now</div></div>
@@ -508,6 +509,7 @@
           <div class="view cli" data-mode="cli" aria-hidden="true">
             <div class="body">
               <div class="side">
+                <div class="shead"><div class="segwrap"><span class="seg" data-go="desktop">Desktop</span><span class="seg on" data-go="cli">CLI</span></div></div>
                 <div class="search"><span class="mag"></span> Search accounts…</div>
                 <div class="sect"><span>CLI accounts</span><span class="ct">2</span></div>
                 <div class="prow sel"><span class="cmark sm">&gt;_</span><span class="pc"><span class="nm">Work CLI</span><span class="ps">work@corp.com</span></span><span class="sdot ok"></span></div>
@@ -515,7 +517,6 @@
                 <div class="newp"><span aria-hidden="true">+</span> New account</div>
               </div>
               <div class="main">
-                <div class="segwrap"><span class="seg" data-go="desktop">Desktop</span><span class="seg on" data-go="cli">CLI</span></div>
                 <div class="hero2">
                   <span class="cmark lg">&gt;_</span>
                   <div class="h2copy"><div class="hrow"><span class="hname">Work CLI</span><span class="pill2 ok">Signed in</span></div><div class="hsub">work@corp.com</div></div>
