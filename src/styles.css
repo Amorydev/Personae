@@ -112,12 +112,7 @@ input, .path { -webkit-user-select: text; user-select: text; }
   display: flex; align-items: center; justify-content: center; gap: 10px;
   position: relative; z-index: 1;
 }
-.side-head::before {
-  /* Reserved macOS traffic-light space, out of flow so it doesn't skew the
-     centering below — the switch should sit at the true horizontal center
-     of the sidebar, not just the center of the space after this reserve. */
-  content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 78px;
-}
+:root[data-overlay-controls] .side-head { padding-left: 78px; }
 .side-head .segmented { flex: none; }
 .brand {
   font-family: var(--serif);
