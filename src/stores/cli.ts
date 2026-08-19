@@ -247,11 +247,21 @@ export const useCliStore = defineStore("cli", () => {
   async function doCliDelete(name: string) {
     try {
       await invoke("delete_cli_profile", { name, purge: true });
+    } catch (e) {
+      // Backend already doesn't have it (e.g. removed through some other
+      // path while this list was stale) — from the user's perspective it's
+      // gone either way, so this counts as success, not an error to surface.
+      // Drop it from the local list directly rather than only relying on the
+      // reloadCli() below to notice, so it's guaranteed gone immediately.
+      if (typeof e === "string" && e.startsWith("No such CLI account:")) {
+        cliProfiles.value = cliProfiles.value.filter((p) => p.name !== name);
+        if (!cliProfiles.value.some((p) => p.slug === cliSelected.value)) {
+          cliSelected.value = cliProfiles.value[0]?.slug ?? null;
+        }
+      } else {
+        throw e;
+      }
     } finally {
-      // Resync even on failure: a "No such account" error means the backend
-      // already doesn't have it (e.g. deleted through some other path while
-      // this list was stale) — reloading clears the phantom entry either way,
-      // instead of leaving it stuck in the sidebar until a manual refresh.
       await reloadCli();
     }
   }
