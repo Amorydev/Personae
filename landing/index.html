@@ -166,7 +166,12 @@
   .win .prow .sdot { margin-left: auto; width: 8px; height: 8px; border-radius: 50%; flex: none; background: #3a3640; }
   .win .prow .sdot.ok { background: var(--ok); box-shadow: 0 0 7px var(--ok); }
   .win .prow .sdot.warn { background: var(--amber); box-shadow: 0 0 7px var(--amber); }
-  .win .newp { margin-top: auto; display: flex; align-items: center; justify-content: center; gap: 6px; font-size: 12px; color: var(--dim); border: 1px solid var(--line-soft); border-radius: 9px; padding: 9px; background: #100f13; }
+  .win .sfoot { margin: auto -11px 0; border-top: 1px solid var(--line-soft); padding: 9px 11px 0; display: flex; flex-direction: column; gap: 6px; }
+  .win .tsw { display: flex; border: 1px solid var(--line-soft); border-radius: 8px; overflow: hidden; background: #100f13; }
+  .win .tseg { flex: 1; text-align: center; font-size: 10.5px; font-weight: 600; color: var(--dim); padding: 5px 0; }
+  .win .tseg.on { background: var(--terra); color: #fff; }
+  .win .sbtn { display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--dim); border-radius: 8px; padding: 7px 9px; }
+  .win .newp { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--dim); border: 1px solid var(--line-soft); border-radius: 9px; padding: 9px; background: #100f13; }
 
   /* terminal ">_" account mark */
   .win .cmark { display: grid; place-items: center; border-radius: 28%; font-family: var(--mono); font-weight: 700; line-height: 1;
@@ -345,7 +350,7 @@
     .wrap { padding: 0 20px; }
     .win .body { grid-template-columns: 1fr; }
     .win .side { border-right: 0; border-bottom: 1px solid var(--line-soft); }
-    .win .newp { display: none; }
+    .win .sfoot { display: none; }
     .win .act { margin-left: 0; }
     .win .wmeta { gap: 8px; }
     .bento { grid-template-columns: 1fr; }
@@ -491,7 +496,11 @@
                 <div class="prow"><span class="tile" style="background:var(--teal)"><svg><use href="#burst"/></svg></span><span class="pc"><span class="nm">Work</span><span class="ps run">Running</span></span><span class="sdot ok"></span></div>
                 <div class="prow"><span class="tile" style="background:var(--violet)"><svg><use href="#burst"/></svg></span><span class="pc"><span class="nm">Acme client</span><span class="ps">Last active · 2h ago</span></span><span class="sdot"></span></div>
                 <div class="prow"><span class="tile" style="background:var(--amber)"><svg><use href="#burst"/></svg></span><span class="pc"><span class="nm">Studio</span><span class="ps">Last active · Yesterday</span></span><span class="sdot"></span></div>
-                <div class="newp"><span aria-hidden="true">+</span> New profile</div>
+                <div class="sfoot">
+                  <div class="tsw"><span class="tseg">Light</span><span class="tseg">Dark</span><span class="tseg on">Auto</span></div>
+                  <div class="sbtn"><span aria-hidden="true">⚙</span> Settings</div>
+                  <div class="newp"><span aria-hidden="true">+</span> New profile</div>
+                </div>
               </div>
               <div class="main">
                 <div class="hero2">
@@ -514,7 +523,11 @@
                 <div class="sect"><span>CLI accounts</span><span class="ct">2</span></div>
                 <div class="prow sel"><span class="cmark sm">&gt;_</span><span class="pc"><span class="nm">Work CLI</span><span class="ps">work@corp.com</span></span><span class="sdot ok"></span></div>
                 <div class="prow"><span class="cmark sm" style="--wc:var(--terra)">&gt;_</span><span class="pc"><span class="nm">Personal CLI</span><span class="ps warn">Needs login</span></span><span class="sdot warn"></span></div>
-                <div class="newp"><span aria-hidden="true">+</span> New account</div>
+                <div class="sfoot">
+                  <div class="tsw"><span class="tseg">Light</span><span class="tseg">Dark</span><span class="tseg on">Auto</span></div>
+                  <div class="sbtn"><span aria-hidden="true">⚙</span> Settings</div>
+                  <div class="newp"><span aria-hidden="true">+</span> New account</div>
+                </div>
               </div>
               <div class="main">
                 <div class="hero2">
