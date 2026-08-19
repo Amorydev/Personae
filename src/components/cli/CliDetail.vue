@@ -86,7 +86,19 @@ function openIde() {
       <div><span>Last active</span><strong>{{ relTime(cliCurrent.last_active) }}</strong></div>
       <div><span>Created</span><strong>{{ createdLabel(cliCurrent.created) }}</strong></div>
       <div><span>Session expires</span><strong :class="{ 'text-warn': expiry?.warn }">{{ expiry ? expiryColumnValue : "—" }}</strong></div>
-      <div><span>Usage</span><strong>{{ usageLabel(cliCurrent.session_usage_pct, cliCurrent.weekly_usage_pct, cliCurrent.subscription_type, cliCurrent.rate_limit_tier) }}</strong></div>
+      <div>
+        <span class="usage-label-row">
+          Usage
+          <button
+            class="mini usage-refresh-btn"
+            :class="{ spinning: cli.usageRefreshingSlug === cliCurrent.slug }"
+            title="Refresh usage"
+            aria-label="Refresh usage"
+            @click="cli.refreshUsage(cliCurrent)"
+          >↻</button>
+        </span>
+        <strong>{{ usageLabel(cliCurrent.session_usage_pct, cliCurrent.weekly_usage_pct, cliCurrent.subscription_type, cliCurrent.rate_limit_tier) }}</strong>
+      </div>
     </section>
     <section v-else class="cli-setup-card">
       <div class="setup-icon" aria-hidden="true">↳</div>

@@ -43,16 +43,21 @@ export const useCliStore = defineStore("cli", () => {
     }
   }
 
+  const usageRefreshingSlug = ref<string | null>(null); // drives the manual refresh button's spinner
+
   function selectCliProfile(p: CliProfile) {
     cliSelected.value = p.slug;
     refreshUsage(p);
   }
 
-  // Fire-and-forget: re-reads just this account's cached /usage numbers from
-  // disk and patches them in reactively. Never awaited by callers — selecting
-  // an account should never block on it, and a failure here shouldn't surface
-  // as an error toast for what's just a background refresh.
+  // Fire-and-forget by default: re-reads just this account's cached /usage
+  // numbers from disk and patches them in reactively. Not awaited by
+  // selectCliProfile — selecting an account should never block on it, and a
+  // failure here shouldn't surface as an error toast for what's just a
+  // background refresh. The manual refresh button awaits it instead, to drive
+  // its own spinner.
   async function refreshUsage(p: CliProfile) {
+    usageRefreshingSlug.value = p.slug;
     try {
       const [sessionPct, weeklyPct] = await invoke<[number | null, number | null]>("get_cli_usage", { name: p.name });
       const target = cliProfiles.value.find((x) => x.slug === p.slug);
@@ -62,6 +67,8 @@ export const useCliStore = defineStore("cli", () => {
       }
     } catch (e) {
       console.error(e);
+    } finally {
+      if (usageRefreshingSlug.value === p.slug) usageRefreshingSlug.value = null;
     }
   }
 
@@ -187,9 +194,9 @@ export const useCliStore = defineStore("cli", () => {
   }
 
   return {
-    cliProfiles, cliSelected, cliQuery, cliAvailable, cliWorkspaces, pendingLaunch, initialized,
+    cliProfiles, cliSelected, cliQuery, cliAvailable, cliWorkspaces, pendingLaunch, initialized, usageRefreshingSlug,
     filteredCli, cliCurrent, workspacesFor,
     reloadCli, selectCliProfile, moveCliSelection, doCliLogin, doCliLaunch, doCliLaunchAt, getLaunchHistory, resumePendingLaunch, doCliCreate, doCliDelete,
-    deleteWorkspace, openWorkspace, openInIde, getProviderConfig, setProviderConfig,
+    deleteWorkspace, openWorkspace, openInIde, getProviderConfig, setProviderConfig, refreshUsage,
   };
 });
