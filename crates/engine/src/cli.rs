@@ -49,6 +49,7 @@ pub struct CliProfile {
 /// Parse `claudeAiOauth.expiresAt` / `.refreshTokenExpiresAt` (unix ms) out of a
 /// `.credentials.json` body. Returns `(None, None)` for malformed/absent input —
 /// callers treat that the same as "unknown", not an error.
+#[cfg_attr(not(windows), allow(dead_code))]
 fn extract_token_expiry(json: &str) -> (Option<u64>, Option<u64>) {
     let v: serde_json::Value = match serde_json::from_str(json) {
         Ok(v) => v,
@@ -64,6 +65,7 @@ fn extract_token_expiry(json: &str) -> (Option<u64>, Option<u64>) {
 /// `.credentials.json` body — real fields confirmed present on a live account
 /// this session. `(None, None)` for malformed/absent input (e.g. api-key-mode
 /// accounts have no claudeAiOauth object at all).
+#[cfg_attr(not(windows), allow(dead_code))]
 fn extract_plan_tier(json: &str) -> (Option<String>, Option<String>) {
     let v: serde_json::Value = match serde_json::from_str(json) {
         Ok(v) => v,
