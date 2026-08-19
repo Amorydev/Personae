@@ -527,7 +527,7 @@ kbd {
   background: color-mix(in srgb, var(--panel) 72%, transparent); outline: none;
   transition: border-color .16s ease, background .16s ease, transform .16s ease;
 }
-.workspace-row:hover, .workspace-row:focus-within {
+.workspace-row:hover:not(:has(.workspace-open:disabled)), .workspace-row:focus-within {
   border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
   background: color-mix(in srgb, var(--accent) 5%, var(--panel));
 }
@@ -552,13 +552,8 @@ kbd {
 }
 .workspace-row:hover .workspace-remove, .workspace-remove:focus-visible { opacity: 1; }
 .workspace-remove:hover { background: var(--danger-bg); color: var(--danger-text); }
-.workspace-empty {
-  display: flex; align-items: center; gap: 12px; min-height: 72px; padding: 13px 14px;
-  border: 1px dashed var(--border); border-radius: 12px; color: var(--text-dim);
-}
-.workspace-empty-icon { width: 32px; height: 32px; display: grid; place-items: center; border-radius: 9px; background: var(--panel); color: var(--text-mute); }
-.workspace-empty > div { flex: 1; min-width: 0; }
-.workspace-empty p { margin: 0; color: var(--text-mute); font-size: 11px; }
+.workspace-row-add { grid-template-columns: 1fr; border-style: dashed; }
+.workspace-row-add .workspace-open:disabled { cursor: default; opacity: .55; }
 
 .profile-data-card {
   display: grid; grid-template-columns: 34px minmax(0, 1fr) auto; align-items: center; gap: 11px;
