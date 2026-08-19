@@ -211,11 +211,14 @@
   .win .stat .v.vdot::before { content: ""; display: inline-block; width: 7px; height: 7px; border-radius: 50%;
                                background: var(--ok); box-shadow: 0 0 7px var(--ok); margin-right: 7px; }
   .win .wsx { margin-top: 22px; }
-  .win .wsx .wt { font-size: 13.5px; font-weight: 700; letter-spacing: .01em; }
-  .win .wsx .wsub { font-size: 11px; color: var(--faint); margin-top: 3px; }
+  .win .shd { margin-bottom: 9px; }
+  .win .shd h4 { margin: 0; font-size: 13px; font-weight: 650; }
+  .win .shd p { margin: 3px 0 0; font-size: 10.5px; color: var(--faint); }
   .win .wslist { margin-top: 12px; display: flex; flex-direction: column; gap: 9px; }
   .win .wsrow { display: flex; align-items: center; gap: 12px; background: var(--ink-2); border: 1px solid var(--line-soft); border-radius: 12px; padding: 11px 13px; }
   .win .wsrow .wico { width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center; background: var(--ink-3); color: var(--dim); font-size: 13px; flex: none; }
+  .win .wsrow-add { border-style: dashed; }
+  .win .wsrow-add .wpath { font-family: var(--sans); }
   .win .wcopy { display: flex; flex-direction: column; min-width: 0; flex: 1 1 auto; }
   .win .wname { font-size: 12.5px; font-weight: 600; }
   .win .wpath { font-family: var(--mono); font-size: 10.5px; color: var(--faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px; }
@@ -514,7 +517,7 @@
                   <div class="act"><span class="launch">↗ Launch Desktop</span><span class="ghost">Show data…</span></div>
                 </div>
                 <div class="stats"><div class="stat"><div class="k">Storage</div><div class="v">7.1 MB</div></div><div class="stat"><div class="k">Last active</div><div class="v">Just now</div></div><div class="stat"><div class="k">Created</div><div class="v">Today</div></div></div>
-                <div class="pdata"><div class="k">Profile data</div><div class="card2"><span class="dico" aria-hidden="true">◇</span><span class="dcopy"><span class="dt">Claude Desktop data</span><span class="path">~/Library/Application Support/Claude-Personal</span></span><span class="dbtn">Show in Finder</span></div></div>
+                <div class="pdata"><div class="shd"><h4>Profile data</h4><p>Login, history, cache, and settings isolated for this profile.</p></div><div class="card2"><span class="dico" aria-hidden="true">◇</span><span class="dcopy"><span class="dt">Claude Desktop data</span><span class="path">~/Library/Application Support/Claude-Personal</span></span><span class="dbtn">Show in Finder</span></div></div>
                 <div class="adv"><div><div class="advt">Advanced details</div><div class="advs">Appearance, repair, and profile actions</div></div><span class="chev" aria-hidden="true">⌄</span></div>
               </div>
             </div>
@@ -549,11 +552,11 @@
                   <div class="stat"><div class="k">Usage <span class="kbtn kico">↻</span></div><div class="v">29% session · 7% week</div></div>
                 </div>
                 <div class="wsx">
-                  <div class="wt">Workspaces</div>
-                  <div class="wsub">Projects that reopen with this account active.</div>
+                  <div class="shd"><h4>Workspaces</h4><p>Projects that reopen with this account active.</p></div>
                   <div class="wslist">
                     <div class="wsrow"><span class="wico" aria-hidden="true">◇</span><span class="wcopy"><span class="wname">demo</span><span class="wpath">/Users/you/Projects/demo</span></span><span class="wmeta"><span class="badge">Cursor</span><span class="wtime">10m ago</span></span><span class="wdel" aria-hidden="true">×</span></div>
                     <div class="wsrow"><span class="wico" aria-hidden="true">◇</span><span class="wcopy"><span class="wname">api</span><span class="wpath">/Users/you/Projects/api</span></span><span class="wmeta"><span class="badge">VS Code</span><span class="wtime">2h ago</span></span><span class="wdel" aria-hidden="true">×</span></div>
+                    <div class="wsrow wsrow-add"><span class="wico" aria-hidden="true">◇</span><span class="wcopy"><span class="wname">Open project…</span><span class="wpath">Bind another project to this account</span></span></div>
                   </div>
                 </div>
                 <div class="adv"><div><div class="advt">Advanced details</div><div class="advs">Config, login, and account actions</div></div><span class="chev" aria-hidden="true">⌄</span></div>
