@@ -552,20 +552,13 @@ kbd {
 }
 .workspace-row:hover .workspace-remove, .workspace-remove:focus-visible { opacity: 1; }
 .workspace-remove:hover { background: var(--danger-bg); color: var(--danger-text); }
-.workspace-add-row {
-  display: flex; align-items: center; gap: 8px; padding: 9px 12px;
-  border: 1px dashed var(--border); border-radius: 10px; background: transparent;
-  color: var(--text-dim); font: inherit; font-size: 13px; cursor: pointer;
-}
-.workspace-add-row:hover { color: var(--text); border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); }
 .workspace-empty {
   display: flex; align-items: center; gap: 12px; min-height: 72px; padding: 13px 14px;
   border: 1px dashed var(--border); border-radius: 12px; color: var(--text-dim);
 }
 .workspace-empty-icon { width: 32px; height: 32px; display: grid; place-items: center; border-radius: 9px; background: var(--panel); color: var(--text-mute); }
 .workspace-empty > div { flex: 1; min-width: 0; }
-.workspace-empty strong { color: var(--text); font-size: 13px; }
-.workspace-empty p { margin: 3px 0 0; color: var(--text-mute); font-size: 11px; }
+.workspace-empty p { margin: 0; color: var(--text-mute); font-size: 11px; }
 
 .profile-data-card {
   display: grid; grid-template-columns: 34px minmax(0, 1fr) auto; align-items: center; gap: 11px;

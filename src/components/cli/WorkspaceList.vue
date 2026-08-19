@@ -18,15 +18,7 @@ function remove(id: string, e: MouseEvent) {
 </script>
 
 <template>
-  <div v-if="!workspaces.length" class="workspace-empty">
-    <span class="workspace-empty-icon" aria-hidden="true">◇</span>
-    <div>
-      <strong>No projects yet</strong>
-      <p>{{ loggedIn ? "Open a project to bind it to this account." : "Log in before connecting a project." }}</p>
-    </div>
-    <button v-if="loggedIn" class="btn compact" @click="$emit('open-project')">Open project…</button>
-  </div>
-  <div v-else class="workspace-list">
+  <div class="workspace-list">
     <div v-for="w in workspaces" :key="w.id" class="workspace-row">
       <button
         class="workspace-open"
@@ -46,8 +38,15 @@ function remove(id: string, e: MouseEvent) {
       </button>
       <button class="workspace-remove" title="Remove this workspace" :aria-label="`Remove ${folderName(w.project_path)}`" @click="remove(w.id, $event)">×</button>
     </div>
-    <button v-if="loggedIn" class="workspace-add-row" @click="$emit('open-project')">
-      <span aria-hidden="true">◇</span> Open project…
-    </button>
+    <!-- Same card as the empty state, minus the "No projects yet" heading —
+         shown whether or not workspaces exist, so there's always a way to
+         bind another project without it reading as "you have none". -->
+    <div class="workspace-empty">
+      <span class="workspace-empty-icon" aria-hidden="true">◇</span>
+      <div>
+        <p>{{ loggedIn ? "Open a project to bind it to this account." : "Log in before connecting a project." }}</p>
+      </div>
+      <button v-if="loggedIn" class="btn compact" @click="$emit('open-project')">Open project…</button>
+    </div>
   </div>
 </template>
