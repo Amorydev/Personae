@@ -92,9 +92,15 @@ function openIde() {
       <div><span>Storage</span><strong>{{ prettySize(cliCurrent.data_size) }}</strong></div>
       <div><span>Last active</span><strong>{{ relTime(cliCurrent.last_active) }}</strong></div>
       <div><span>Created</span><strong>{{ createdLabel(cliCurrent.created) }}</strong></div>
-      <div><span>Session expires</span><strong :class="{ 'text-warn': expiry?.warn }">{{ expiry ? expiryColumnValue : "—" }}</strong></div>
       <div>
-        <span class="usage-label-row">
+        <span class="metric-label-row">
+          Session expires
+          <button class="metric-action-btn" title="Relog this account" aria-label="Relog this account" @click="cli.doCliLogin">Relog</button>
+        </span>
+        <strong :class="{ 'text-warn': expiry?.warn }">{{ expiry ? expiryColumnValue : "—" }}</strong>
+      </div>
+      <div>
+        <span class="metric-label-row">
           Usage
           <button
             class="mini usage-refresh-btn"

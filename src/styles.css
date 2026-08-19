@@ -500,9 +500,15 @@ kbd {
 .cli-metrics strong { color: var(--text); font-size: 15px; font-weight: 600; }
 .cli-metrics strong.text-warn { color: var(--warn); }
 .metric-with-dot { display: inline-flex; align-items: center; gap: 7px; }
-.usage-label-row { display: inline-flex; align-items: center; gap: 4px; }
+.metric-label-row { display: inline-flex; align-items: center; gap: 4px; }
 .usage-refresh-btn { width: 14px; height: 14px; font-size: 10px; }
 .usage-refresh-btn.spinning { animation: spin 0.8s linear infinite; color: var(--accent); }
+.metric-action-btn {
+  flex: none; padding: 1px 6px; border: 1px solid var(--border); border-radius: 999px;
+  background: transparent; color: var(--text-mute); font: inherit; font-size: 9px;
+  letter-spacing: normal; text-transform: none; line-height: 1.6; cursor: pointer;
+}
+.metric-action-btn:hover { color: var(--text); border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); }
 
 .cli-setup-card {
   display: flex; gap: 13px; align-items: flex-start; margin-top: 18px; padding: 16px;
