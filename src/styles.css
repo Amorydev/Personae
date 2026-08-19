@@ -504,11 +504,16 @@ kbd {
 .usage-refresh-btn { width: 14px; height: 14px; font-size: 10px; }
 .usage-refresh-btn.spinning { animation: spin 0.8s linear infinite; color: var(--accent); }
 .metric-action-btn {
-  flex: none; padding: 1px 6px; border: 1px solid var(--border); border-radius: 999px;
-  background: transparent; color: var(--text-mute); font: inherit; font-size: 9px;
+  flex: none; padding: 1px 6px;
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--border)); border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 10%, transparent); color: var(--accent);
+  font: inherit; font-size: 9px; font-weight: 700;
   letter-spacing: normal; text-transform: none; line-height: 1.6; cursor: pointer;
 }
-.metric-action-btn:hover { color: var(--text); border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); }
+.metric-action-btn:hover {
+  background: color-mix(in srgb, var(--accent) 20%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 70%, var(--border));
+}
 
 .cli-setup-card {
   display: flex; gap: 13px; align-items: flex-start; margin-top: 18px; padding: 16px;
