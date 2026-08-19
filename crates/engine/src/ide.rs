@@ -356,7 +356,14 @@ pub fn delete_workspace(id: &str) -> Result<(), String> {
 pub fn open_workspace(id: &str, now: u64) -> Result<(), String> {
     let list = imp::load_workspaces();
     let w = list.into_iter().find(|w| w.id == id).ok_or("No such workspace")?;
-    open_in_ide(&w.account_name, &w.ide_id, &w.project_path)?;
+    // "terminal" bindings come from a plain `cli::launch` (see
+    // `cli::sync_launch_workspace`), not a real IDE — re-launch the account's
+    // terminal at that path instead of trying to open a nonexistent "terminal" IDE.
+    if w.ide_id == "terminal" {
+        crate::cli::launch(&w.account_name, Some(&w.project_path))?;
+    } else {
+        open_in_ide(&w.account_name, &w.ide_id, &w.project_path)?;
+    }
     save_workspace(&w.account_slug, &w.account_name, &w.ide_id, &w.ide_name, &w.project_path, now)
 }
 
@@ -480,7 +487,14 @@ pub fn delete_workspace(id: &str) -> Result<(), String> {
 pub fn open_workspace(id: &str, now: u64) -> Result<(), String> {
     let list = imp_win::load_workspaces();
     let w = list.into_iter().find(|w| w.id == id).ok_or("No such workspace")?;
-    open_in_ide(&w.account_name, &w.ide_id, &w.project_path)?;
+    // "terminal" bindings come from a plain `cli::launch` (see
+    // `cli::sync_launch_workspace`), not a real IDE — re-launch the account's
+    // terminal at that path instead of trying to open a nonexistent "terminal" IDE.
+    if w.ide_id == "terminal" {
+        crate::cli::launch(&w.account_name, Some(&w.project_path))?;
+    } else {
+        open_in_ide(&w.account_name, &w.ide_id, &w.project_path)?;
+    }
     save_workspace(&w.account_slug, &w.account_name, &w.ide_id, &w.ide_name, &w.project_path, now)
 }
 

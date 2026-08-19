@@ -724,6 +724,19 @@ fn record_launch_location(slug: &str, path: &str) {
     let _ = save_launch_history_at(&f, &h);
 }
 
+/// A plain `launch(name, Some(project_path))` (terminal only, no IDE) is a
+/// real project↔account binding too — it was only feeding the launch-history
+/// picker (`record_launch_location`, the "top 5 recent" list) and not the
+/// Workspaces list on the account's own detail page, so a project launched
+/// this way silently didn't show up there. `ide_id: "terminal"` distinguishes
+/// this from a real `open_in_ide`-created binding (`workspace_id` includes
+/// `ide_id`, so the two never collide even for the same account+path).
+fn sync_launch_workspace(slug: &str, name: &str, path: &str) {
+    record_launch_location(slug, path);
+    let now = crate::platform::to_secs(std::time::SystemTime::now()).unwrap_or(0);
+    let _ = crate::ide::save_workspace(slug, name, "terminal", "Terminal", path, now);
+}
+
 /// If this profile has a stored login, ensure its config dir is marked onboarded
 /// so interactive `claude` (via Launch or an IDE terminal) skips the first-run
 /// login menu and goes straight in on the stored account. No-op when not logged
@@ -792,7 +805,7 @@ pub fn launch(name: &str, project_path: Option<&str>) -> Result<(), String> {
     let (ok, e) = crate::platform::run("open", &[&lp.display().to_string()]);
     if !ok { return Err(e); }
     if let Some(p) = project_path {
-        record_launch_location(&crate::platform::slugify(name), p);
+        sync_launch_workspace(&crate::platform::slugify(name), name, p);
     }
     Ok(())
 }
@@ -962,7 +975,7 @@ pub fn launch(name: &str, project_path: Option<&str>) -> Result<(), String> {
     };
     if result.is_ok() {
         if let Some(p) = project_path {
-            record_launch_location(&slug, p);
+            sync_launch_workspace(&slug, name, p);
         }
     }
     result
