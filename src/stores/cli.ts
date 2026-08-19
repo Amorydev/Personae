@@ -245,8 +245,15 @@ export const useCliStore = defineStore("cli", () => {
   }
 
   async function doCliDelete(name: string) {
-    await invoke("delete_cli_profile", { name, purge: true });
-    await reloadCli();
+    try {
+      await invoke("delete_cli_profile", { name, purge: true });
+    } finally {
+      // Resync even on failure: a "No such account" error means the backend
+      // already doesn't have it (e.g. deleted through some other path while
+      // this list was stale) — reloading clears the phantom entry either way,
+      // instead of leaving it stuck in the sidebar until a manual refresh.
+      await reloadCli();
+    }
   }
 
   // Re-selects by the NEW name after reload rather than assuming the slug is

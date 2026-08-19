@@ -295,6 +295,19 @@ input, .path { -webkit-user-select: text; user-select: text; }
 
 /* ---------- modal ---------- */
 .modal { position: fixed; inset: 0; background: #00000088; backdrop-filter: blur(3px); display: grid; place-items: center; z-index: 50; }
+.context-menu-backdrop { position: fixed; inset: 0; z-index: 60; }
+.context-menu {
+  position: fixed; min-width: 160px; padding: 5px; background: var(--panel);
+  border: 1px solid var(--border); border-radius: var(--r); box-shadow: 0 14px 34px rgba(0,0,0,.4);
+  display: flex; flex-direction: column;
+}
+.context-menu-item {
+  display: block; width: 100%; text-align: left; padding: 8px 10px; border: 0; border-radius: 7px;
+  background: transparent; color: var(--text); font: inherit; font-size: 13px; cursor: pointer;
+}
+.context-menu-item:hover { background: var(--panel-hover); }
+.context-menu-item.danger { color: var(--danger-text); }
+.context-menu-item.danger:hover { background: var(--danger-bg); }
 .modal-card {
   width: 360px; background: var(--panel); border: 1px solid var(--border);
   border-radius: var(--r-xl); padding: 20px; display: flex; flex-direction: column; gap: 14px;
@@ -344,6 +357,8 @@ kbd {
   border: 0; background: transparent; color: var(--text-mute); border-radius: 6px;
   font-size: 11px; line-height: 1; cursor: pointer;
 }
+.edit-name-btn { width: 30px; height: 30px; font-size: 17px; }
+.edit-name-btn:hover { background: var(--panel); color: var(--text); }
 .mini:hover { background: var(--panel); color: var(--warn); }
 
 /* ---------- modal hint text ---------- */

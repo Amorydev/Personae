@@ -21,13 +21,13 @@ watch(
     if (!p) { ui.closeModal("ide"); return; }
     if (!p.logged_in) {
       ui.closeModal("ide");
-      alert("Log in to this account first.");
+      ui.showToast("Log in to this account first.", "error");
       return;
     }
     const list = await invoke<IdeInfo[]>("list_ides");
     if (!list.length) {
       ui.closeModal("ide");
-      alert("No VS Code-family IDE found (VS Code, Cursor, Windsurf, Antigravity).");
+      ui.showToast("No VS Code-family IDE found (VS Code, Cursor, Windsurf, Antigravity).", "error");
       return;
     }
     ides.value = list;

@@ -42,7 +42,7 @@ async function submit() {
       small_fast_model: smallFastModel.value || null,
     });
   } catch (e) {
-    alert(String(e));
+    ui.showToast(String(e), "error");
     return;
   }
   ui.closeModal("provider");

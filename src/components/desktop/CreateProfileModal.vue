@@ -27,7 +27,7 @@ async function submit() {
   try {
     await desktop.create(n, color.value);
   } catch (e) {
-    alert(String(e));
+    ui.showToast(String(e), "error");
     return;
   }
   ui.closeModal("create");

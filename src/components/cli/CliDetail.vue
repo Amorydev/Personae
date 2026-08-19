@@ -65,7 +65,7 @@ function openIde() {
         <div class="cli-hero-copy">
           <div class="cli-title-line">
             <h1>{{ cliCurrent.name }}</h1>
-            <button class="mini" title="Edit account name" aria-label="Edit account name" @click="ui.openModal('cliEdit')">✎</button>
+            <button class="mini edit-name-btn" title="Edit account name" aria-label="Edit account name" @click="ui.openModal('cliEdit')">✎</button>
           </div>
           <p>
             {{
