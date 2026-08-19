@@ -1,7 +1,7 @@
 import { defineStore } from "pinia";
 import { reactive, ref } from "vue";
 
-export type ModalName = "create" | "edit" | "del" | "cliCreate" | "cliEdit" | "cliDel" | "ide" | "provider" | "terminal" | "settings" | "desktopSettings" | "launchLocation";
+export type ModalName = "create" | "edit" | "del" | "cliCreate" | "cliEdit" | "cliDel" | "ide" | "provider" | "terminal" | "browserProfile" | "settings" | "desktopSettings" | "launchLocation";
 export type ToastTone = "info" | "error";
 
 export const useUiStore = defineStore("ui", () => {
@@ -13,6 +13,7 @@ export const useUiStore = defineStore("ui", () => {
   // needs to read carefully, not a passing notification.
   const errorMessage = ref<string | null>(null);
   const modals = reactive<Record<ModalName, boolean>>({
+    browserProfile: false,
     create: false,
     edit: false,
     del: false,

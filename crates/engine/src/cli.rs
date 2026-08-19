@@ -746,7 +746,7 @@ mod imp_win {
         let dir = launcher_root().join("_login");
         fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
         let cfg = config_dir(slug).display().to_string();
-        let browser = crate::browser::prepare_login_browser(&dir);
+        let browser = crate::browser::prepare_login_browser(&dir, slug);
         let body = render_login_win(name, &cfg, &claude_bin_string(), browser.as_deref());
         let p = login_path(slug);
         fs::write(&p, body).map_err(|e| e.to_string())?;

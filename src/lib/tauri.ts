@@ -54,6 +54,11 @@ const MOCK_BROWSERS: BrowserApp[] = [
   { id: "chrome", name: "Google Chrome" },
   { id: "edge", name: "Microsoft Edge" },
 ];
+const MOCK_BROWSER_PROFILES = [
+  { dir: "Default", name: "First user", account: "you@example.com" },
+  { dir: "Profile 1", name: "Work", account: "work@example.com" },
+];
+const MOCK_ACCOUNT_PROFILES: Record<string, string> = {};
 
 export async function invoke<T = unknown>(cmd: string, args?: Record<string, unknown>): Promise<T> {
   if (hasTauri) return window.__TAURI__!.core.invoke<T>(cmd, args);
@@ -167,6 +172,15 @@ export async function invoke<T = unknown>(cmd: string, args?: Record<string, unk
       return undefined as T;
     }
     case "pick_browser_exe": return "/Applications/Firefox.app/Contents/MacOS/firefox" as T;
+    case "list_browser_profiles": return structuredClone(MOCK_BROWSER_PROFILES) as T;
+    case "get_account_browser_profile":
+      return (MOCK_ACCOUNT_PROFILES[args!.slug as string] ?? null) as T;
+    case "set_account_browser_profile": {
+      const slug = args!.slug as string;
+      const dir = args!.profileDir as string | null;
+      if (dir) MOCK_ACCOUNT_PROFILES[slug] = dir; else delete MOCK_ACCOUNT_PROFILES[slug];
+      return undefined as T;
+    }
     case "list_ides": return ([
       { id: "vscode", name: "Visual Studio Code", cli_path: "/usr/local/bin/code" },
       { id: "cursor", name: "Cursor", cli_path: "/Applications/Cursor.app/…/cursor" },

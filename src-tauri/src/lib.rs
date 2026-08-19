@@ -154,6 +154,19 @@ async fn set_browser_prefs(browser_id: Option<String>, custom_path: Option<Strin
 async fn pick_browser_exe() -> Result<Option<String>, String> { blocking(browser::pick_browser_exe).await }
 
 #[tauri::command]
+async fn list_browser_profiles() -> Vec<browser::BrowserProfile> { blocking(browser::list_profiles).await }
+
+#[tauri::command]
+async fn get_account_browser_profile(slug: String) -> Option<String> {
+    blocking(move || browser::get_account_profile(&slug)).await
+}
+
+#[tauri::command]
+async fn set_account_browser_profile(slug: String, profile_dir: Option<String>) -> Result<(), String> {
+    blocking(move || browser::set_account_profile(&slug, profile_dir)).await
+}
+
+#[tauri::command]
 async fn list_ides() -> Vec<ide::Ide> { blocking(ide::list_ides).await }
 
 #[tauri::command]
@@ -194,6 +207,7 @@ pub fn run() {
             list_terminals, get_default_terminal, set_default_terminal,
             get_custom_terminal_path, set_custom_terminal, pick_terminal_exe,
             list_browsers, get_browser_prefs, set_browser_prefs, pick_browser_exe,
+            list_browser_profiles, get_account_browser_profile, set_account_browser_profile,
             list_ides, pick_folder, open_in_ide,
             list_workspaces, save_workspace, delete_workspace, open_workspace
         ])

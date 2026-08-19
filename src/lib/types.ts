@@ -55,6 +55,13 @@ export interface BrowserPrefs {
   reuse_profile: boolean;
 }
 
+/** A Chromium profile; `dir` is what goes into `--profile-directory`. */
+export interface BrowserProfile {
+  dir: string;
+  name: string;
+  account: string | null;
+}
+
 export interface Workspace {
   id: string;
   account_slug: string;

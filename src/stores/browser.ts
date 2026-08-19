@@ -1,7 +1,7 @@
 import { defineStore } from "pinia";
 import { ref } from "vue";
 import { invoke } from "../lib/tauri";
-import type { BrowserApp } from "../lib/types";
+import type { BrowserApp, BrowserProfile } from "../lib/types";
 
 export const useBrowserStore = defineStore("browser", () => {
   const browsers = ref<BrowserApp[]>([]);
@@ -9,6 +9,10 @@ export const useBrowserStore = defineStore("browser", () => {
   const customPath = ref<string | null>(null);
   const reuseProfile = ref(true);
   const loaded = ref(false);
+  // Chromium profiles of whichever browser sign-in will use. Empty for a
+  // non-Chromium or custom browser, which callers read as "nothing to pick".
+  const profiles = ref<BrowserProfile[]>([]);
+  const profilesLoaded = ref(false);
 
   async function load() {
     browsers.value = await invoke<BrowserApp[]>("list_browsers");
@@ -30,5 +34,22 @@ export const useBrowserStore = defineStore("browser", () => {
     return invoke<string | null>("pick_browser_exe");
   }
 
-  return { browsers, browserId, customPath, reuseProfile, loaded, load, save, pickCustom };
+  async function loadProfiles() {
+    profiles.value = await invoke<BrowserProfile[]>("list_browser_profiles");
+    profilesLoaded.value = true;
+  }
+
+  /** Which browser profile signs this account in, or null if never chosen. */
+  async function accountProfile(slug: string): Promise<string | null> {
+    return invoke<string | null>("get_account_browser_profile", { slug });
+  }
+
+  async function setAccountProfile(slug: string, profileDir: string | null) {
+    await invoke("set_account_browser_profile", { slug, profileDir });
+  }
+
+  return {
+    browsers, browserId, customPath, reuseProfile, loaded, profiles, profilesLoaded,
+    load, save, pickCustom, loadProfiles, accountProfile, setAccountProfile,
+  };
 });

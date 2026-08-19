@@ -8,12 +8,23 @@
 // `--guest`, which isn't expressible through BROWSER alone, so we point
 // BROWSER at a tiny generated wrapper .cmd that adds the flag before the URL.
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 #[derive(Serialize, Clone)]
 pub struct BrowserApp {
     pub id: String,
     pub name: String,
+}
+
+/// One Chromium profile inside a browser's user-data dir. `dir` is what goes
+/// into `--profile-directory` ("Default", "Profile 1", ...); `name` and
+/// `account` are the human labels Chrome shows in its own profile switcher.
+#[derive(Serialize, Clone, PartialEq, Debug)]
+pub struct BrowserProfile {
+    pub dir: String,
+    pub name: String,
+    pub account: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Default)]
@@ -25,6 +36,13 @@ struct BrowserSettings {
     /// `true` (default when unset) = reuse the browser's existing signed-in
     /// profile; `false` = force a fresh `--guest` session.
     reuse_profile: Option<bool>,
+    /// CLI account slug -> Chromium profile directory to sign that account in
+    /// with. Per-account on purpose: the whole point of Personae is that each
+    /// account is a *different* claude.ai login, so they generally live in
+    /// different browser profiles and a single global choice cannot serve them.
+    /// Absent for accounts never explicitly assigned one.
+    #[serde(default)]
+    account_profiles: BTreeMap<String, String>,
 }
 
 fn settings_file() -> PathBuf {
@@ -56,9 +74,52 @@ pub fn get_prefs() -> BrowserPrefs {
 }
 
 pub fn set_prefs(browser_id: Option<String>, custom_path: Option<String>, reuse_profile: bool) -> Result<(), String> {
+    let existing = load_settings_at(&settings_file());
     save_settings_at(&settings_file(), &BrowserSettings {
         browser_id, custom_path, reuse_profile: Some(reuse_profile),
+        // Preserve per-account choices; this call only edits the global prefs.
+        account_profiles: existing.account_profiles,
     })
+}
+
+/// The browser profile chosen for one CLI account, if any.
+pub fn get_account_profile(slug: &str) -> Option<String> {
+    load_settings_at(&settings_file()).account_profiles.get(slug).cloned()
+}
+
+/// Remember (or, with `None`, forget) which browser profile signs this account
+/// in. Everything else in the settings file is left untouched.
+pub fn set_account_profile(slug: &str, profile_dir: Option<String>) -> Result<(), String> {
+    let mut s = load_settings_at(&settings_file());
+    match profile_dir {
+        Some(d) => { s.account_profiles.insert(slug.to_string(), d); }
+        None => { s.account_profiles.remove(slug); }
+    }
+    save_settings_at(&settings_file(), &s)
+}
+
+/// Parse the `profile.info_cache` map out of a Chromium `Local State` body.
+/// Sorted by directory for a stable picker order. Malformed or absent input
+/// yields an empty list rather than an error: a browser with no profile
+/// metadata is a normal state, not a failure.
+fn parse_profiles(local_state: &str) -> Vec<BrowserProfile> {
+    let v: serde_json::Value = match serde_json::from_str(local_state) {
+        Ok(v) => v,
+        Err(_) => return vec![],
+    };
+    let cache = match v.pointer("/profile/info_cache").and_then(|c| c.as_object()) {
+        Some(c) => c,
+        None => return vec![],
+    };
+    let mut out: Vec<BrowserProfile> = cache.iter().map(|(dir, info)| BrowserProfile {
+        dir: dir.clone(),
+        name: info.get("name").and_then(|n| n.as_str())
+            .filter(|s| !s.is_empty()).unwrap_or(dir).to_string(),
+        account: info.get("user_name").and_then(|u| u.as_str())
+            .filter(|s| !s.is_empty()).map(String::from),
+    }).collect();
+    out.sort_by(|a, b| a.dir.cmp(&b.dir));
+    out
 }
 
 #[cfg(windows)]
@@ -88,6 +149,63 @@ fn edge_path() -> Option<PathBuf> {
     }
     candidate(&paths)
 }
+
+/// Where a Chromium browser keeps `Local State` and its profile directories.
+#[cfg(windows)]
+fn user_data_root(browser_id: &str) -> Option<PathBuf> {
+    let lad = std::env::var("LOCALAPPDATA").map(PathBuf::from).ok()?;
+    match browser_id {
+        "chrome" => Some(lad.join(r"Google\Chrome\User Data")),
+        "edge" => Some(lad.join(r"Microsoft\Edge\User Data")),
+        _ => None,
+    }
+}
+
+/// The system default browser as an id we understand, read from the UserChoice
+/// ProgId ("ChromeHTML" / "MSEdgeHTM"). `None` for anything else — Firefox and
+/// friends have no `--profile-directory` equivalent, so there is nothing to
+/// offer. This matters because leaving the browser preference on "system
+/// default" is the common case, and the profile picker has to work there too.
+#[cfg(windows)]
+fn default_browser_id() -> Option<String> {
+    let (ok, out) = crate::platform::run_powershell_hidden(&[
+        "-NoProfile", "-Command",
+        "(Get-ItemProperty 'HKCU:\\Software\\Microsoft\\Windows\\Shell\\Associations\\UrlAssociations\\https\\UserChoice' -Name ProgId -ErrorAction SilentlyContinue).ProgId",
+    ]);
+    if !ok { return None; }
+    let progid = out.trim().to_ascii_lowercase();
+    if progid.starts_with("chrome") { Some("chrome".into()) }
+    else if progid.starts_with("msedge") { Some("edge".into()) }
+    else { None }
+}
+
+/// The browser sign-in will actually use: the explicit preference when set,
+/// otherwise whatever Windows would have opened anyway.
+#[cfg(windows)]
+fn effective_browser_id() -> Option<String> {
+    match get_prefs().browser_id {
+        Some(id) if id != "custom" => Some(id),
+        Some(_) => None, // a custom exe: we cannot know its profile layout
+        None => default_browser_id(),
+    }
+}
+
+/// Profiles available in the browser that sign-in will use. Empty when that is
+/// a custom exe or a non-Chromium browser, which the caller reads as "nothing
+/// to pick" and carries on exactly as before.
+#[cfg(windows)]
+pub fn list_profiles() -> Vec<BrowserProfile> {
+    let root = match effective_browser_id().as_deref().and_then(user_data_root) {
+        Some(r) => r,
+        None => return vec![],
+    };
+    std::fs::read_to_string(root.join("Local State"))
+        .map(|s| parse_profiles(&s))
+        .unwrap_or_default()
+}
+
+#[cfg(not(windows))]
+pub fn list_profiles() -> Vec<BrowserProfile> { vec![] }
 
 #[cfg(windows)]
 pub fn detect_browsers() -> Vec<BrowserApp> {
@@ -123,20 +241,37 @@ pub fn pick_browser_exe() -> Result<Option<String>, String> {
 /// Resolve the current preference to (browser_exe, extra_flag_for_new_session).
 /// Returns `None` for "system default" (don't touch BROWSER at all).
 #[cfg(windows)]
+fn exe_for_id(id: &str, custom: Option<String>) -> Option<PathBuf> {
+    match id {
+        "chrome" => chrome_path(),
+        "edge" => edge_path(),
+        "custom" => custom.map(PathBuf::from),
+        _ => None,
+    }
+}
+
+#[cfg(windows)]
 fn resolve_browser() -> Option<(PathBuf, bool)> {
     let prefs = get_prefs();
-    let exe = match prefs.browser_id.as_deref() {
-        Some("chrome") => chrome_path()?,
-        Some("edge") => edge_path()?,
-        Some("custom") => PathBuf::from(prefs.custom_path?),
-        _ => return None,
-    };
+    let exe = exe_for_id(prefs.browser_id.as_deref()?, prefs.custom_path)?;
     Some((exe, !prefs.reuse_profile))
 }
 
+/// Body of the wrapper `.cmd` that `BROWSER` points at. `claude auth login`
+/// only ever appends the URL (`<$BROWSER> <url>`), so any flag we need has to
+/// be baked in ahead of it. `--guest` wins over a profile when both are asked
+/// for: a guest window has no profile by definition.
 #[cfg(any(windows, test))]
-fn guest_wrapper_body(exe: &str) -> String {
-    format!("@echo off\r\nstart \"\" \"{exe}\" --guest \"%~1\"\r\n")
+fn wrapper_body(exe: &str, guest: bool, profile_dir: Option<&str>) -> String {
+    let flags = if guest {
+        " --guest".to_string()
+    } else {
+        match profile_dir {
+            Some(d) => format!(" --profile-directory=\"{d}\""),
+            None => String::new(),
+        }
+    };
+    format!("@echo off\r\nstart \"\" \"{exe}\"{flags} \"%~1\"\r\n")
 }
 
 /// Writes a wrapper `.cmd` (if a specific browser + fresh-session flag is
@@ -146,20 +281,31 @@ fn guest_wrapper_body(exe: &str) -> String {
 /// wrapper is only needed to inject `--guest` for "new session", since
 /// `claude auth login` only ever appends the URL as `<$BROWSER> <url>`.
 #[cfg(windows)]
-pub fn prepare_login_browser(login_dir: &Path) -> Option<String> {
-    let (exe, want_guest) = resolve_browser()?;
-    if !want_guest {
+pub fn prepare_login_browser(login_dir: &Path, slug: &str) -> Option<String> {
+    let profile_dir = get_account_profile(slug);
+    // A chosen profile is reason enough to take over BROWSER even when the
+    // preference is still "system default": resolve whatever Windows would
+    // have opened so the flag has something to attach to. Without a profile
+    // this stays exactly as it was — no preference, no override.
+    let (exe, want_guest) = match resolve_browser() {
+        Some(r) => r,
+        None => match profile_dir.as_deref() {
+            Some(_) => (exe_for_id(&default_browser_id()?, None)?, false),
+            None => return None,
+        },
+    };
+    if !want_guest && profile_dir.is_none() {
         return Some(exe.display().to_string());
     }
     let wrapper = login_dir.join("browser-launcher.cmd");
-    let body = guest_wrapper_body(&exe.display().to_string());
+    let body = wrapper_body(&exe.display().to_string(), want_guest, profile_dir.as_deref());
     std::fs::create_dir_all(login_dir).ok()?;
     std::fs::write(&wrapper, body).ok()?;
     Some(wrapper.display().to_string())
 }
 
 #[cfg(not(windows))]
-pub fn prepare_login_browser(_login_dir: &Path) -> Option<String> { None }
+pub fn prepare_login_browser(_login_dir: &Path, _slug: &str) -> Option<String> { None }
 
 #[cfg(test)]
 mod tests {
@@ -173,6 +319,7 @@ mod tests {
         assert_eq!(load_settings_at(&f).reuse_profile, None); // unset means "reuse" at the call site
         save_settings_at(&f, &BrowserSettings {
             browser_id: Some("chrome".into()), custom_path: None, reuse_profile: Some(false),
+            account_profiles: BTreeMap::new(),
         }).unwrap();
         let loaded = load_settings_at(&f);
         assert_eq!(loaded.browser_id.as_deref(), Some("chrome"));
@@ -181,10 +328,88 @@ mod tests {
         std::fs::remove_file(&f).ok();
     }
 
+    /// A settings file written before per-account profiles existed must still
+    /// load — otherwise everyone's browser preference silently resets.
     #[test]
-    fn guest_wrapper_quotes_the_url_arg() {
-        let body = guest_wrapper_body(r"C:\Program Files\Google\Chrome\Application\chrome.exe");
+    fn settings_without_account_profiles_still_load() {
+        let f = std::env::temp_dir().join(format!("browser-legacy-{}.json", std::process::id()));
+        std::fs::write(&f, r#"{"browser_id":"edge","custom_path":null,"reuse_profile":true}"#).unwrap();
+        let loaded = load_settings_at(&f);
+        assert_eq!(loaded.browser_id.as_deref(), Some("edge"));
+        assert!(loaded.account_profiles.is_empty());
+        std::fs::remove_file(&f).ok();
+    }
+
+    #[test]
+    fn account_profiles_roundtrip() {
+        let f = std::env::temp_dir().join(format!("browser-accts-{}.json", std::process::id()));
+        let _ = std::fs::remove_file(&f);
+        let mut m = BTreeMap::new();
+        m.insert("justin".to_string(), "Profile 1".to_string());
+        save_settings_at(&f, &BrowserSettings {
+            browser_id: None, custom_path: None, reuse_profile: None, account_profiles: m,
+        }).unwrap();
+        let loaded = load_settings_at(&f);
+        assert_eq!(loaded.account_profiles.get("justin").map(String::as_str), Some("Profile 1"));
+        assert_eq!(loaded.account_profiles.get("nobody"), None);
+        std::fs::remove_file(&f).ok();
+    }
+
+    #[test]
+    fn wrapper_quotes_the_url_arg() {
+        let body = wrapper_body(r"C:\Program Files\Google\Chrome\Application\chrome.exe", true, None);
         assert!(body.contains("--guest \"%~1\""), "URL arg must be quoted: {body}");
         assert!(!body.contains("--guest %1"), "must not use a bare %1: {body}");
+    }
+
+    #[test]
+    fn wrapper_passes_profile_directory_quoted() {
+        let body = wrapper_body(r"C:\chrome.exe", false, Some("Profile 1"));
+        // The space in "Profile 1" is exactly why this has to be quoted.
+        assert!(body.contains("--profile-directory=\"Profile 1\""), "{body}");
+        assert!(body.contains("\"%~1\""), "URL arg must still be quoted: {body}");
+        assert!(!body.contains("--guest"), "profile mode must not go guest: {body}");
+    }
+
+    #[test]
+    fn wrapper_without_flags_is_a_plain_launch() {
+        let body = wrapper_body(r"C:\chrome.exe", false, None);
+        assert!(!body.contains("--guest"), "{body}");
+        assert!(!body.contains("--profile-directory"), "{body}");
+        assert!(body.contains("\"%~1\""), "{body}");
+    }
+
+    /// Guest wins: a guest window has no profile, so honouring both would
+    /// silently produce a window that is neither.
+    #[test]
+    fn guest_beats_profile_when_both_are_set() {
+        let body = wrapper_body(r"C:\chrome.exe", true, Some("Profile 1"));
+        assert!(body.contains("--guest"), "{body}");
+        assert!(!body.contains("--profile-directory"), "{body}");
+    }
+
+    #[test]
+    fn parses_chromium_local_state_profiles() {
+        let body = r#"{"profile":{"last_used":"Default","info_cache":{
+            "Profile 1":{"name":"Syd","user_name":"syd@example.com"},
+            "Default":{"name":"First user","user_name":"first@example.com"},
+            "Profile 2":{"name":"","user_name":""}
+        }}}"#;
+        let got = parse_profiles(body);
+        // Sorted by directory, so the picker order does not jump around.
+        assert_eq!(got.iter().map(|p| p.dir.as_str()).collect::<Vec<_>>(),
+                   vec!["Default", "Profile 1", "Profile 2"]);
+        assert_eq!(got[1].name, "Syd");
+        assert_eq!(got[1].account.as_deref(), Some("syd@example.com"));
+        // Blank name falls back to the directory; blank account becomes None.
+        assert_eq!(got[2].name, "Profile 2");
+        assert_eq!(got[2].account, None);
+    }
+
+    #[test]
+    fn malformed_local_state_yields_no_profiles() {
+        assert!(parse_profiles("not json").is_empty());
+        assert!(parse_profiles("{}").is_empty());
+        assert!(parse_profiles(r#"{"profile":{"info_cache":[]}}"#).is_empty());
     }
 }
