@@ -1,7 +1,7 @@
 {
   "name": "claude-profiles-tauri",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.1.14",
   "description": "Personae — run multiple isolated Claude accounts (Desktop + Claude Code CLI) at once.",
   "type": "module",
   "license": "MIT",

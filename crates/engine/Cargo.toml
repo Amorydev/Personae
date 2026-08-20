@@ -1,6 +1,6 @@
 [package]
 name = "personae-engine"
-version = "0.1.0"
+version = "0.1.14"
 description = "Personae's platform-agnostic business logic (Desktop/CLI account engines, IDE, terminal, browser prefs) — deliberately has NO dependency on tauri/wry, so `cargo check`/`cargo test` on this crate alone skips compiling the whole GUI stack."
 edition = "2021"
 

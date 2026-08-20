@@ -1,6 +1,6 @@
 [package]
 name = "claude-profiles-tauri"
-version = "0.1.0"
+version = "0.1.14"
 description = "Personae — run multiple isolated Claude accounts (Desktop + Claude Code CLI) at once."
 authors = ["Amory Dev <amory.dev@gmail.com>"]
 license = "MIT"

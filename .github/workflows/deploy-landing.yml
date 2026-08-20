@@ -30,6 +30,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # need the full tag history so the latest release tag resolves
 
       - uses: actions/setup-node@v4
         with:
@@ -94,5 +96,12 @@ jobs:
           export LANDING_PATH
           export LANDING_PORT="$PORT"
           export LANDING_SSH_KEY="$KEY"
+
+          # Advertise the newest release tag, so the landing's version tracks the
+          # installers on the VPS automatically. deploy-landing.sh rebuilds the
+          # site (npm run landing:build), and build.mjs reads LANDING_VERSION;
+          # empty is fine — it then falls back to package.json.
+          export LANDING_VERSION="$(git describe --tags --abbrev=0 2>/dev/null || true)"
+          echo "Landing version: ${LANDING_VERSION:-<package.json fallback>}"
 
           bash scripts/deploy-landing.sh "${ARGS[@]}"
