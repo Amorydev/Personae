@@ -53,9 +53,24 @@ function feedback() {
       </div>
     </section>
     <section class="cli-metrics" aria-label="Profile overview">
+      <div><span>Status</span><strong class="metric-with-dot"><span class="account-status-dot" :class="current.running ? 'is-ok' : 'is-idle'" aria-hidden="true"></span>{{ current.running ? "Running" : "Ready" }}</strong></div>
       <div><span>Storage</span><strong>{{ prettySize(current.data_size) }}</strong></div>
       <div><span>Last active</span><strong>{{ relTime(current.last_active) }}</strong></div>
       <div><span>Created</span><strong>{{ createdLabel(current.created) }}</strong></div>
+      <div>
+        <span class="metric-label-row">
+          Session
+          <button
+            class="mini usage-refresh-btn"
+            :class="{ spinning: desktop.usageRefreshingSlug === current.slug }"
+            title="Refresh usage from the desktop app"
+            aria-label="Refresh usage from the desktop app"
+            @click="desktop.refreshUsageLive(current)"
+          >↻</button>
+        </span>
+        <strong>{{ current.session_usage_pct != null ? `${current.session_usage_pct}%` : "—" }}</strong>
+      </div>
+      <div><span>This week</span><strong>{{ current.weekly_usage_pct != null ? `${current.weekly_usage_pct}%` : "—" }}</strong></div>
     </section>
     <section class="cli-section">
       <div class="section-heading">

@@ -8,10 +8,12 @@ export const nowSecs = () => Math.floor(Date.now() / 1000);
 const MOCK: DesktopProfile[] = [
   { name: "Personal", slug: "personal", tint: "#C2714F", running: false,
     data_size: "7.1M", data_path: "/Users/you/Library/Application Support/Claude-Personal",
-    created: nowSecs() - 3600, last_active: nowSecs() - 12 },
+    created: nowSecs() - 3600, last_active: nowSecs() - 12,
+    session_usage_pct: 42, weekly_usage_pct: 26 },
   { name: "Work", slug: "work", tint: "#14B8A6", running: true,
     data_size: "128M", data_path: "/Users/you/Library/Application Support/Claude-Work",
-    created: nowSecs() - 86400 * 9, last_active: nowSecs() - 4200 },
+    created: nowSecs() - 86400 * 9, last_active: nowSecs() - 4200,
+    session_usage_pct: null, weekly_usage_pct: null },
 ];
 
 const MOCK_CLI: CliProfile[] = [
@@ -73,10 +75,15 @@ export async function invoke<T = unknown>(cmd: string, args?: Record<string, unk
       MOCK.push({ name, slug, tint: color ? `#${color}` : "#8B5CF6",
         running: false, data_size: "0B",
         data_path: `/Users/you/Library/Application Support/Claude-${name}`,
-        created: nowSecs(), last_active: nowSecs() });
+        created: nowSecs(), last_active: nowSecs(),
+        session_usage_pct: null, weekly_usage_pct: null });
       return undefined as T;
     }
     case "set_profile_color": { const p = MOCK.find(m => m.name === args!.name); if (p) p.tint = `#${args!.color}`; return undefined as T; }
+    case "fetch_desktop_usage": {
+      const p = MOCK.find((m) => m.name === args!.name);
+      return (p ? [p.session_usage_pct, p.weekly_usage_pct] : [null, null]) as T;
+    }
     case "get_desktop_exe_override": return MOCK_DESKTOP_EXE_OVERRIDE as T;
     case "set_desktop_exe_override": MOCK_DESKTOP_EXE_OVERRIDE = (args!.path as string | null) ?? null; return undefined as T;
     case "pick_desktop_exe": return "C:\\Program Files\\AnthropicClaude\\Claude.exe" as T;

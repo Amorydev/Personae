@@ -7,6 +7,8 @@ export interface DesktopProfile {
   data_path: string;
   created: number;
   last_active: number | null;
+  session_usage_pct: number | null; // 0-100, rolling 5-hour window; null until the desktop app has sampled usage
+  weekly_usage_pct: number | null; // 0-100, plan's overall weekly cap
 }
 
 export type AuthMode = "oauth" | "api_key";
