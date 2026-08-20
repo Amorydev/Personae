@@ -1,0 +1,57 @@
+name: Deploy router (UAT)
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-router-uat
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: uat
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve image ref
+        id: img
+        run: echo "image=ghcr.io/${GITHUB_REPOSITORY,,}/router-uat" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: ./router
+          push: true
+          tags: ${{ steps.img.outputs.image }}:uat
+
+      - name: Trigger VPS deploy
+        env:
+          SSH_KEY: ${{ secrets.UAT_SSH_KEY }}
+          SSH_HOST: ${{ secrets.UAT_SSH_HOST }}
+          SSH_USER: ${{ secrets.UAT_SSH_USER }}
+          SSH_PORT: ${{ secrets.UAT_SSH_PORT }}
+        run: |
+          set -euo pipefail
+          for name in SSH_KEY SSH_HOST SSH_USER; do
+            if [ -z "${!name:-}" ]; then
+              echo "::error::$name is not set in the uat environment"
+              exit 1
+            fi
+          done
+          KEY="$RUNNER_TEMP/uat_key"
+          printf '%s\n' "$SSH_KEY" | tr -d '\r' > "$KEY"
+          chmod 600 "$KEY"
+          PORT="${SSH_PORT:-22}"
+          mkdir -p ~/.ssh
+          ssh-keyscan -p "$PORT" -H "$SSH_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          ssh -i "$KEY" -p "$PORT" -o IdentitiesOnly=yes "$SSH_USER@$SSH_HOST" deploy
