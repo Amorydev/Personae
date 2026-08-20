@@ -19,6 +19,7 @@ import CliDeleteModal from "./components/cli/CliDeleteModal.vue";
 import IdeModal from "./components/cli/IdeModal.vue";
 import ProviderConfigModal from "./components/cli/ProviderConfigModal.vue";
 import TerminalPickerModal from "./components/cli/TerminalPickerModal.vue";
+import BrowserProfilePickerModal from "./components/cli/BrowserProfilePickerModal.vue";
 import SettingsModal from "./components/cli/SettingsModal.vue";
 import LaunchLocationModal from "./components/cli/LaunchLocationModal.vue";
 import Toast from "./components/Toast.vue";
@@ -89,6 +90,7 @@ onMounted(() => {
   <IdeModal />
   <ProviderConfigModal />
   <TerminalPickerModal />
+  <BrowserProfilePickerModal />
   <SettingsModal />
   <LaunchLocationModal />
   <ErrorModal />

@@ -4,6 +4,7 @@ import { invoke, nowSecs } from "../lib/tauri";
 import type { CliProfile, ProviderConfig, Workspace } from "../lib/types";
 import { useUiStore } from "./ui";
 import { useTerminalStore } from "./terminal";
+import { useBrowserStore } from "./browser";
 
 // Persisted (survives app restarts) so a transient fetch miss — or an
 // account whose local .claude.json cache doesn't have fresh data on this
@@ -39,6 +40,7 @@ export const useCliStore = defineStore("cli", () => {
   const cliAvailable = ref(true);
   const cliWorkspaces = ref<Workspace[]>([]); // all saved workspaces (rendered nested under their account)
   const pendingLaunch = ref<CliProfile | null>(null); // set while the first-run terminal picker is up
+  const pendingLogin = ref<CliProfile | null>(null); // set while the browser-profile picker is up
   const initialized = ref(false); // false until the first reloadCli() settles — gates the loading UI
 
   const filteredCli = computed(() => {
@@ -181,9 +183,28 @@ export const useCliStore = defineStore("cli", () => {
   }
 
   async function doCliLogin() {
-    const ui = useUiStore();
     const p = cliCurrent.value;
     if (!p) return;
+    const ui = useUiStore();
+    const browser = useBrowserStore();
+    // Same shape as the first-run terminal picker below: more than one browser
+    // profile available, no saved choice for this account, so ask once and
+    // resume. It has to happen *before* the browser opens — sign-in lands on
+    // the claude.ai login page rather than Authorize whenever the profile that
+    // opens has no claude.ai session, and nothing downstream can detect that:
+    // Personae sees only whether credentials eventually appear, and a manual
+    // login produces those too, just slower.
+    if (!browser.profilesLoaded) await browser.loadProfiles();
+    if (browser.profiles.length > 1 && !(await browser.accountProfile(p.slug))) {
+      pendingLogin.value = p;
+      ui.openModal("browserProfile");
+      return;
+    }
+    await runCliLogin(p);
+  }
+
+  async function runCliLogin(p: CliProfile) {
+    const ui = useUiStore();
     try {
       await invoke("login_cli_profile", { name: p.name });
     } catch (e) {
@@ -191,6 +212,26 @@ export const useCliStore = defineStore("cli", () => {
       return;
     }
     ui.showToast(`Sign-in opened in Terminal for "${p.name}". Return here when it is complete.`);
+  }
+
+  /** Re-run a sign-in that paused on the browser-profile picker. */
+  async function resumePendingLogin() {
+    const p = pendingLogin.value;
+    pendingLogin.value = null;
+    if (p) await runCliLogin(p);
+  }
+
+  /** Forget this account's browser profile so the picker asks again. */
+  async function chooseLoginBrowserProfile(p: CliProfile) {
+    const ui = useUiStore();
+    const browser = useBrowserStore();
+    if (!browser.profilesLoaded) await browser.loadProfiles();
+    if (browser.profiles.length < 2) {
+      ui.showToast("Only one browser profile is available.");
+      return;
+    }
+    pendingLogin.value = p;
+    ui.openModal("browserProfile");
   }
 
   async function doCliLaunch(p: CliProfile) {
@@ -322,9 +363,9 @@ export const useCliStore = defineStore("cli", () => {
   }
 
   return {
-    cliProfiles, cliSelected, cliQuery, cliAvailable, cliWorkspaces, pendingLaunch, initialized, usageRefreshingSlug, sessionExpiredSlugs,
+    cliProfiles, cliSelected, cliQuery, cliAvailable, cliWorkspaces, pendingLaunch, pendingLogin, initialized, usageRefreshingSlug, sessionExpiredSlugs,
     filteredCli, cliCurrent, workspacesFor,
-    reloadCli, selectCliProfile, moveCliSelection, doCliLogin, doCliLaunch, doCliLaunchAt, getLaunchHistory, resumePendingLaunch, doCliCreate, doCliDelete, renameCliProfile,
+    reloadCli, selectCliProfile, moveCliSelection, doCliLogin, doCliLaunch, doCliLaunchAt, getLaunchHistory, resumePendingLaunch, resumePendingLogin, chooseLoginBrowserProfile, doCliCreate, doCliDelete, renameCliProfile,
     deleteWorkspace, openWorkspace, openInIde, getProviderConfig, setProviderConfig, refreshUsageLive,
   };
 });
