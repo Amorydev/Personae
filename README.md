@@ -155,8 +155,9 @@ Artifacts are written to `src-tauri/target/release/bundle/` (`.dmg`/`.app` on ma
 │   └── src/                 # platform, macos, windows, cli, ide, terminal, browser, desktop_prefs
 ├── src-tauri/               # Thin Tauri v2 wrapper crate
 │   └── src/lib.rs           # #[tauri::command] handlers (the app's API surface)
-├── bin/personae.js          # `personae` CLI launcher (npm run deploy)
+├── bin/personae.js          # `personae` CLI launcher (npm run deploy:link)
 ├── landing/                 # Marketing site source (claudemux.com)
+├── scripts/                 # deploy-app.mjs (install locally), deploy-landing.sh
 ├── docs/                    # Windows test plan / QA checklist
 └── .github/workflows/       # CI: release build + publish
 ```
