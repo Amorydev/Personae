@@ -22,6 +22,8 @@ pub struct Profile {
     pub tint: Option<String>,     // "#RRGGBB"
     pub created: Option<u64>,     // unix secs (data-dir birthtime)
     pub last_active: Option<u64>, // unix secs (data-dir mtime)
+    pub session_usage_pct: Option<u32>, // 0-100 rolling 5-hour window; None until the app has sampled it
+    pub weekly_usage_pct: Option<u32>,  // 0-100 plan's overall weekly cap
 }
 
 pub trait Platform {
@@ -33,6 +35,13 @@ pub trait Platform {
     fn repair(&self) -> Result<usize, String>;
     fn set_color(&self, name: &str, color: &str) -> Result<(), String>;
     fn claude_found(&self) -> bool;
+    /// Latest (session, weekly) usage the Claude Desktop app last sampled for
+    /// this profile — a fresh re-read of its own `plan-usage-history.json` (see
+    /// `read_plan_usage`), for the manual refresh button. The desktop parity to
+    /// `cli::fetch_live_usage`: the app keeps that file current every few
+    /// minutes while it is running, so re-reading surfaces its newest sample
+    /// without Personae itself calling out to Anthropic.
+    fn fetch_usage(&self, name: &str) -> (Option<u32>, Option<u32>);
 }
 
 // --- shared helpers -------------------------------------------------------
@@ -81,6 +90,41 @@ pub fn resolve_color(input: &str) -> Option<String> {
     } else {
         None
     }
+}
+
+/// Latest (session, weekly) usage percentages the Claude Desktop app itself
+/// last sampled into `plan-usage-history.json` inside a profile's data dir. The
+/// desktop parity to `cli::get_usage`'s local re-read: no network call, just the
+/// most recent point the app already wrote (it appends one every few minutes
+/// while running). Each sample's `u.fh` is the rolling 5-hour utilization and
+/// `u.sd` the 7-day/weekly one — the same two numbers the CLI's Usage row shows.
+/// `as_f64().round()` (not `as_u64`) because the app may serialize either a bare
+/// int or a float; missing file, empty history, or a parse error all yield
+/// `(None, None)`, which the UI renders as "—".
+pub fn read_plan_usage(data_dir: &std::path::Path) -> (Option<u32>, Option<u32>) {
+    let raw = match std::fs::read_to_string(data_dir.join("plan-usage-history.json")) {
+        Ok(s) => s,
+        Err(_) => return (None, None),
+    };
+    let v: serde_json::Value = match serde_json::from_str(&raw) {
+        Ok(v) => v,
+        Err(_) => return (None, None),
+    };
+    let latest = v.get("samples").and_then(|s| s.as_array()).and_then(|arr| {
+        arr.iter().max_by(|a, b| {
+            let ta = a.get("t").and_then(|t| t.as_f64()).unwrap_or(f64::MIN);
+            let tb = b.get("t").and_then(|t| t.as_f64()).unwrap_or(f64::MIN);
+            ta.total_cmp(&tb)
+        })
+    });
+    let pct = |key: &str| {
+        latest
+            .and_then(|s| s.get("u"))
+            .and_then(|u| u.get(key))
+            .and_then(|x| x.as_f64())
+            .map(|x| x.round() as u32)
+    };
+    (pct("fh"), pct("sd"))
 }
 
 /// SystemTime -> unix seconds (None if before the epoch / unavailable).

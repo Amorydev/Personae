@@ -411,6 +411,10 @@ impl Platform for Win {
         self.claude_exe().is_some()
     }
 
+    fn fetch_usage(&self, name: &str) -> (Option<u32>, Option<u32>) {
+        read_plan_usage(&self.data_root().join(slugify(name)))
+    }
+
     fn create(&self, name: &str, color: Option<String>, _isolation: &str) -> Result<(), String> {
         let exe = self
             .claude_exe()
@@ -526,6 +530,7 @@ impl Platform for Win {
             let md = fs::metadata(&data_dir).ok();
             let created = md.as_ref().and_then(|m| m.created().ok()).and_then(to_secs);
             let last_active = md.as_ref().and_then(|m| m.modified().ok()).and_then(to_secs);
+            let (session_usage_pct, weekly_usage_pct) = crate::platform::read_plan_usage(&data_dir);
             out.push(Profile {
                 name,
                 slug,
@@ -536,6 +541,8 @@ impl Platform for Win {
                 tint,
                 created,
                 last_active,
+                session_usage_pct,
+                weekly_usage_pct,
             });
         }
         out.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));

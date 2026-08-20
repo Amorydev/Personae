@@ -14,6 +14,8 @@ function makeProfile(overrides: Partial<DesktopProfile>): DesktopProfile {
     data_path: "/tmp/test",
     created: 0,
     last_active: null,
+    session_usage_pct: null,
+    weekly_usage_pct: null,
     ...overrides,
   };
 }

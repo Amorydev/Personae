@@ -200,6 +200,10 @@ impl Mac {
 impl Platform for Mac {
     fn claude_found(&self) -> bool { self.claude_bin().is_some() }
 
+    fn fetch_usage(&self, name: &str) -> (Option<u32>, Option<u32>) {
+        read_plan_usage(&self.data_root().join(slugify(name)))
+    }
+
     fn create(&self, name: &str, color: Option<String>, isolation: &str) -> Result<(), String> {
         let bin = self.claude_bin().ok_or("Claude Desktop not found (set CLAUDE_APP).")?;
         let slug = slugify(name);
@@ -251,11 +255,13 @@ impl Platform for Mac {
                 let md = fs::metadata(&data_dir).ok();
                 let created = md.as_ref().and_then(|m| m.created().ok()).and_then(to_secs);
                 let last_active = md.as_ref().and_then(|m| m.modified().ok()).and_then(to_secs);
+                let (session_usage_pct, weekly_usage_pct) = crate::platform::read_plan_usage(&data_dir);
                 out.push(Profile {
                     name, slug,
                     app_path: p.display().to_string(),
                     data_path: data_dir.display().to_string(),
                     running, data_size, tint, created, last_active,
+                    session_usage_pct, weekly_usage_pct,
                 });
             }
         }

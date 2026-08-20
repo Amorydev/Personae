@@ -45,6 +45,9 @@ async fn repair_profiles() -> Result<usize, String> { blocking(|| active().repai
 async fn set_profile_color(name: String, color: String) -> Result<(), String> { blocking(move || active().set_color(&name, &color)).await }
 
 #[tauri::command]
+async fn fetch_desktop_usage(name: String) -> (Option<u32>, Option<u32>) { blocking(move || active().fetch_usage(&name)).await }
+
+#[tauri::command]
 async fn get_desktop_exe_override() -> Option<String> { blocking(desktop_prefs::get_custom_exe).await }
 
 #[tauri::command]
@@ -199,7 +202,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             claude_found, list_profiles, create_profile,
             launch_profile, quit_profile, delete_profile, repair_profiles,
-            set_profile_color, get_desktop_exe_override, set_desktop_exe_override, pick_desktop_exe,
+            set_profile_color, fetch_desktop_usage, get_desktop_exe_override, set_desktop_exe_override, pick_desktop_exe,
             reveal_path, open_url,
             cli_available, list_cli_profiles, create_cli_profile, rename_cli_profile, login_cli_profile,
             launch_cli_profile, get_launch_history, fetch_live_cli_usage, delete_cli_profile,
