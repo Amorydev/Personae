@@ -4,6 +4,7 @@ import { useUiStore } from "./stores/ui";
 import { useDesktopStore } from "./stores/desktop";
 import { useCliStore } from "./stores/cli";
 import { useGlobalShortcuts } from "./composables/useGlobalShortcuts";
+import { useStateRefresh } from "./composables/useStateRefresh";
 import { accentInk, cliColor } from "./lib/format";
 import DesktopSidebar from "./components/desktop/DesktopSidebar.vue";
 import DesktopDetail from "./components/desktop/DesktopDetail.vue";
@@ -32,6 +33,7 @@ const cli = useCliStore();
 useThemeStore(); // applies the saved/system theme on mount; no local state needed here
 
 useGlobalShortcuts();
+useStateRefresh();
 
 const desktopAccent = computed(() => desktop.current?.tint || "#c2714f");
 const cliAccent = computed(() => (cli.cliCurrent ? cliColor(cli.cliCurrent) : "#c2714f"));
@@ -44,17 +46,6 @@ onMounted(() => {
   // browser-style right-click menu ("Back", "Reload", "Inspect Element", …)
   // has no place here.
   window.addEventListener("contextmenu", (e) => e.preventDefault());
-  // Throttled (leading-edge): fires on focus (e.g. returning from the Terminal
-  // after `claude auth login`, to re-detect it), but coalesces rapid focus/blur
-  // cycles so the CLI probes don't re-run more than once per ~800ms.
-  let lastCliFocusReload = 0;
-  window.addEventListener("focus", () => {
-    if (ui.view !== "cli") return;
-    const t = Date.now();
-    if (t - lastCliFocusReload < 800) return;
-    lastCliFocusReload = t;
-    cli.reloadCli();
-  });
 });
 </script>
 
