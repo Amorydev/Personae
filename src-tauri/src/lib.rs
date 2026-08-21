@@ -26,7 +26,7 @@ async fn list_profiles() -> Vec<Profile> { blocking(|| active().list()).await }
 
 #[tauri::command]
 async fn create_profile(name: String, color: Option<String>, isolation: Option<String>) -> Result<(), String> {
-    blocking(move || active().create(&name, color, isolation.as_deref().unwrap_or("env"))).await
+    blocking(move || active().create(&name, color, isolation.as_deref().unwrap_or("flag"))).await
 }
 
 #[tauri::command]

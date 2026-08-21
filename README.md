@@ -69,7 +69,7 @@ Personae is a thin orchestration layer over environment variables that Claude al
 
 | Surface | Isolation mechanism |
 | --- | --- |
-| **Claude Desktop** | Each profile launcher sets `CLAUDE_USER_DATA_DIR` (env isolation, default) or passes `--user-data-dir` (flag isolation) so Claude reads/writes a per-profile data directory. |
+| **Claude Desktop** | Each profile launcher passes `--user-data-dir=<dir>` so Claude reads/writes a per-profile data directory. (Claude Desktop 1.34493.1 turned the older `CLAUDE_USER_DATA_DIR` env var into a signed-token-only switch and now strips it from packaged builds, so Personae no longer uses it. Run **Repair** once to move older profiles over.) |
 | **Claude Code (CLI)** | Each profile launcher sets `CLAUDE_CONFIG_DIR`. Claude Code stores the OAuth credential in the OS keychain under a service name derived from `sha256(CLAUDE_CONFIG_DIR)`, so each config dir is a separate, persistent login. |
 | **IDE** | The chosen account's `CLAUDE_CONFIG_DIR` is injected into the IDE's integrated-terminal environment for the target project, so `claude` in that terminal resolves to the right account. |
 
@@ -171,7 +171,7 @@ Personae stores everything under your user directory. On **macOS**:
 | What | Location |
 | --- | --- |
 | Desktop profile launchers | `~/Applications/Claude Profiles/` |
-| Desktop profile data (`CLAUDE_USER_DATA_DIR`) | `~/Library/Application Support/ClaudeProfiles/<slug>/` |
+| Desktop profile data (`--user-data-dir`) | `~/Library/Application Support/ClaudeProfiles/<slug>/` |
 | CLI profile launchers | `~/Applications/Claude Profiles CLI/` |
 | CLI profile config (`CLAUDE_CONFIG_DIR`) | `~/Library/Application Support/ClaudeProfilesCLI/<slug>/` |
 
