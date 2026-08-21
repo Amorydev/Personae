@@ -29,6 +29,19 @@ jobs:
         with:
           node-version: lts/*
 
+      # The tag IS the version. Stamp it into the two files that decide what the
+      # shipped artifacts report — package.json (drives the landing's {{VERSION}}
+      # and the web build) and tauri.conf.json (drives the .dmg/.msi/.exe version)
+      # — so a tag push can never again produce installers still labelled 0.1.0.
+      # A surgical replace of the first "version" key only, to avoid reformatting
+      # the files; Cargo.toml is left untouched so `cargo test --locked` stays green.
+      - name: Stamp version from tag
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          echo "Releasing version $VERSION"
+          node -e "const fs=require('fs');for(const f of ['package.json','src-tauri/tauri.conf.json']){let s=fs.readFileSync(f,'utf8');s=s.replace(/\"version\":\s*\"[^\"]*\"/, '\"version\": \"'+process.argv[1]+'\"');fs.writeFileSync(f,s);}" "$VERSION"
+
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
         with:
