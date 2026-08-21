@@ -95,7 +95,7 @@ export const useDesktopStore = defineStore("desktop", () => {
   }
 
   async function create(name: string, color: string) {
-    await invoke("create_profile", { name, color, isolation: "env" });
+    await invoke("create_profile", { name, color, isolation: "flag" });
     await reload(false);
     const made = profiles.value.find((p) => p.name === name);
     if (made) selected.value = made.slug;

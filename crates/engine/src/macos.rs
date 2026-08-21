@@ -144,20 +144,26 @@ impl Mac {
         fs::write(app_dir.join("Contents/Info.plist"), plist).map_err(|e| e.to_string())
     }
 
-    fn write_launcher(&self, app_dir: &PathBuf, data_dir: &PathBuf, bin: &PathBuf, isolation: &str) -> Result<(), String> {
+    fn write_launcher(&self, app_dir: &PathBuf, data_dir: &PathBuf, bin: &PathBuf) -> Result<(), String> {
         let dd = data_dir.display();
         let b = bin.display();
         // Force native arm64 (avoids Rosetta on Apple Silicon; universal binary).
-        let body = if isolation == "flag" {
-            format!("#!/bin/bash\nBIN=\"{b}\"\nif [ \"$(sysctl -n hw.optional.arm64 2>/dev/null)\" = \"1\" ]; then\n  exec arch -arm64 \"$BIN\" --user-data-dir=\"{dd}\" \"$@\"\nfi\nexec \"$BIN\" --user-data-dir=\"{dd}\" \"$@\"\n")
-        } else {
-            format!("#!/bin/bash\nexport CLAUDE_USER_DATA_DIR=\"{dd}\"\nBIN=\"{b}\"\nif [ \"$(sysctl -n hw.optional.arm64 2>/dev/null)\" = \"1\" ]; then\n  exec arch -arm64 \"$BIN\" \"$@\"\nfi\nexec \"$BIN\" \"$@\"\n")
-        };
+        let body = format!("#!/bin/bash\nBIN=\"{b}\"\nif [ \"$(sysctl -n hw.optional.arm64 2>/dev/null)\" = \"1\" ]; then\n  exec arch -arm64 \"$BIN\" --user-data-dir=\"{dd}\" \"$@\"\nfi\nexec \"$BIN\" --user-data-dir=\"{dd}\" \"$@\"\n");
         let lp = app_dir.join("Contents/MacOS/launcher");
         fs::write(&lp, body).map_err(|e| e.to_string())?;
         let mut perm = fs::metadata(&lp).map_err(|e| e.to_string())?.permissions();
         perm.set_mode(0o755);
         fs::set_permissions(&lp, perm).map_err(|e| e.to_string())
+    }
+
+    fn heal_launcher(&self, app_dir: &PathBuf, name: &str) {
+        let lp = app_dir.join("Contents/MacOS/launcher");
+        let body = match fs::read_to_string(&lp) { Ok(b) => b, Err(_) => return };
+        if body.contains("--user-data-dir=") { return; }
+        let bin = match self.claude_bin() { Some(b) => b, None => return };
+        let data_dir = self.data_root().join(slugify(name));
+        let _ = fs::create_dir_all(&data_dir);
+        let _ = self.write_launcher(app_dir, &data_dir, &bin);
     }
 
     fn install_icon(&self, app_dir: &PathBuf, hex: &str) -> Option<()> {
@@ -178,8 +184,8 @@ impl Mac {
     /// All Claude pids (main + helpers) belonging to this profile's data dir.
     /// Robust to Claude living outside /Applications: match the *detected* binary
     /// path (the launcher exec's exactly that), so running-detection works wherever
-    /// Claude is installed. `ps eww` includes the environment, so this matches both
-    /// env-isolation (CLAUDE_USER_DATA_DIR in env) and flag-isolation (--user-data-dir).
+    /// Claude is installed. `ps eww -o command=` prints the full argv, which carries
+    /// the profile's `--user-data-dir=<dir>` on the main process and every helper.
     fn profile_pids(&self, data_dir: &PathBuf) -> Vec<String> {
         let pat = self
             .claude_bin()
@@ -204,11 +210,10 @@ impl Platform for Mac {
         read_plan_usage(&self.data_root().join(slugify(name)))
     }
 
-    fn create(&self, name: &str, color: Option<String>, isolation: &str) -> Result<(), String> {
+    fn create(&self, name: &str, color: Option<String>, _isolation: &str) -> Result<(), String> {
         let bin = self.claude_bin().ok_or("Claude Desktop not found (set CLAUDE_APP).")?;
         let slug = slugify(name);
         if slug.is_empty() { return Err("Name must contain letters or numbers.".into()); }
-        let iso = if isolation == "flag" { "flag" } else { "env" };
 
         let app_dir = self.app_root().join(format!("{name}.app"));
         let data_dir = self.data_root().join(&slug);
@@ -222,7 +227,7 @@ impl Platform for Mac {
         fs::create_dir_all(&data_dir).map_err(|e| e.to_string())?;
 
         self.write_info_plist(&app_dir, name, &bundle)?;
-        self.write_launcher(&app_dir, &data_dir, &bin, iso)?;
+        self.write_launcher(&app_dir, &data_dir, &bin)?;
 
         let hex = match color {
             Some(c) => resolve_color(&c).ok_or(format!("Unrecognized color '{c}'."))?,
@@ -272,6 +277,7 @@ impl Platform for Mac {
     fn launch(&self, name: &str) -> Result<(), String> {
         let app = self.app_root().join(format!("{name}.app"));
         if !app.exists() { return Err(format!("No such profile: {name}")); }
+        self.heal_launcher(&app, name);
         let (ok, e) = run("open", &[&app.display().to_string()]);
         if ok { Ok(()) } else { Err(e) }
     }
@@ -327,9 +333,7 @@ impl Platform for Mac {
                 let slug = slugify(&name);
                 let data_dir = self.data_root().join(&slug);
                 let bundle = format!("{BUNDLE_PREFIX}.{slug}");
-                let launcher = app.join("Contents/MacOS/launcher");
-                let iso = fs::read_to_string(&launcher).map(|s| if s.contains("--user-data-dir=") { "flag" } else { "env" }).unwrap_or("env");
-                self.write_launcher(&app, &data_dir, &bin, iso)?;
+                self.write_launcher(&app, &data_dir, &bin)?;
                 self.write_info_plist(&app, &name, &bundle)?;
                 self.lsregister(&app);
                 n += 1;
